@@ -160,7 +160,24 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
       comment: comment.trim(),
       createdAt: id == null
           ? now
-          : _data.shifts.firstWhere((item) => item.id == id).createdAt,
+          : _data.shifts
+              .firstWhere(
+                (item) => item.id == id,
+                orElse: () => Shift(
+                  id: '',
+                  date: now,
+                  kind: ShiftKind.scheduled,
+                  actualStart: now,
+                  actualEnd: now,
+                  colleagueIds: const [],
+                  revenueMinor: 0,
+                  earningsMinor: 0,
+                  comment: '',
+                  createdAt: now,
+                  updatedAt: now,
+                ),
+              )
+              .createdAt,
       updatedAt: now,
     );
     final others = _data.shifts.where((item) => item.id != shift.id).toList();
@@ -174,6 +191,52 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
   Future<void> deleteShift(String id) => _save(
     _data.copyWith(
       shifts: _data.shifts.where((item) => item.id != id).toList(),
+    ),
+  );
+
+  Future<void> savePayout({
+    String? id,
+    required DateTime date,
+    required PayoutKind kind,
+    required int amountMinor,
+    required String comment,
+  }) async {
+    final now = DateTime.now();
+    final payout = Payout(
+      id: id ?? _uuid.v4(),
+      date: DateTime(date.year, date.month, date.day),
+      kind: kind,
+      amountMinor: amountMinor,
+      comment: comment.trim(),
+      createdAt: id == null
+          ? now
+          : _data.payouts
+              .firstWhere(
+                (item) => item.id == id,
+                orElse: () => Payout(
+                  id: '',
+                  date: now,
+                  kind: PayoutKind.advance,
+                  amountMinor: 0,
+                  comment: '',
+                  createdAt: now,
+                  updatedAt: now,
+                ),
+              )
+              .createdAt,
+      updatedAt: now,
+    );
+    final others = _data.payouts.where((item) => item.id != payout.id).toList();
+    await _save(
+      _data.copyWith(
+        payouts: [...others, payout]..sort((a, b) => b.date.compareTo(a.date)),
+      ),
+    );
+  }
+
+  Future<void> deletePayout(String id) => _save(
+    _data.copyWith(
+      payouts: _data.payouts.where((item) => item.id != id).toList(),
     ),
   );
 

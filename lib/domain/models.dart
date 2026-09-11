@@ -10,6 +10,8 @@ enum ScheduleType { threeThree, twoTwo, fiveTwo, weekdays }
 
 enum ShiftKind { scheduled, extra }
 
+enum PayoutKind { advance, salary }
+
 class WorkTime {
   const WorkTime(this.hour, this.minute);
 
@@ -299,6 +301,62 @@ class Shift {
   );
 }
 
+class Payout {
+  const Payout({
+    required this.id,
+    required this.date,
+    required this.kind,
+    required this.amountMinor,
+    required this.comment,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final DateTime date;
+  final PayoutKind kind;
+  final int amountMinor;
+  final String comment;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  Payout copyWith({
+    DateTime? date,
+    PayoutKind? kind,
+    int? amountMinor,
+    String? comment,
+    DateTime? updatedAt,
+  }) => Payout(
+    id: id,
+    date: date ?? this.date,
+    kind: kind ?? this.kind,
+    amountMinor: amountMinor ?? this.amountMinor,
+    comment: comment ?? this.comment,
+    createdAt: createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'date': date.toIso8601String(),
+    'kind': kind.name,
+    'amountMinor': amountMinor,
+    'comment': comment,
+    'createdAt': createdAt.toIso8601String(),
+    'updatedAt': updatedAt.toIso8601String(),
+  };
+
+  factory Payout.fromJson(Map<String, dynamic> json) => Payout(
+    id: json['id'] as String,
+    date: DateTime.parse(json['date'] as String),
+    kind: PayoutKind.values.byName(json['kind'] as String? ?? 'advance'),
+    amountMinor: (json['amountMinor'] as num?)?.toInt() ?? 0,
+    comment: json['comment'] as String? ?? '',
+    createdAt: DateTime.parse(json['createdAt'] as String),
+    updatedAt: DateTime.parse(json['updatedAt'] as String),
+  );
+}
+
 class AppState {
   const AppState({
     required this.settings,
@@ -306,6 +364,7 @@ class AppState {
     required this.payment,
     required this.colleagues,
     required this.shifts,
+    this.payouts = const [],
   });
 
   final AppSettings settings;
@@ -313,6 +372,7 @@ class AppState {
   final PaymentSettings payment;
   final List<Colleague> colleagues;
   final List<Shift> shifts;
+  final List<Payout> payouts;
 
   factory AppState.initial() {
     final now = DateTime.now();
@@ -345,6 +405,7 @@ class AppState {
       ),
       colleagues: const [],
       shifts: const [],
+      payouts: const [],
     );
   }
 
@@ -354,12 +415,14 @@ class AppState {
     PaymentSettings? payment,
     List<Colleague>? colleagues,
     List<Shift>? shifts,
+    List<Payout>? payouts,
   }) => AppState(
     settings: settings ?? this.settings,
     schedule: schedule ?? this.schedule,
     payment: payment ?? this.payment,
     colleagues: colleagues ?? this.colleagues,
     shifts: shifts ?? this.shifts,
+    payouts: payouts ?? this.payouts,
   );
 
   Map<String, dynamic> toJson() => {
@@ -369,6 +432,7 @@ class AppState {
     'payment': payment.toJson(),
     'colleagues': colleagues.map((item) => item.toJson()).toList(),
     'shifts': shifts.map((item) => item.toJson()).toList(),
+    'payouts': payouts.map((item) => item.toJson()).toList(),
   };
 
   String toBackupJson() => const JsonEncoder.withIndent('  ').convert(toJson());
@@ -395,6 +459,9 @@ class AppState {
           .toList(),
       shifts: (json['shifts'] as List<dynamic>? ?? const [])
           .map((item) => Shift.fromJson(Map<String, dynamic>.from(item as Map)))
+          .toList(),
+      payouts: (json['payouts'] as List<dynamic>? ?? const [])
+          .map((item) => Payout.fromJson(Map<String, dynamic>.from(item as Map)))
           .toList(),
     );
   }

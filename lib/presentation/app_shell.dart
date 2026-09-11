@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -12,6 +13,7 @@ import 'package:share_plus/share_plus.dart';
 import '../application/app_controller.dart';
 import '../core/l10n/strings.dart';
 import '../core/theme/app_theme.dart';
+import '../domain/finance_service.dart';
 import '../domain/models.dart';
 import '../domain/revenue_recommendation_service.dart';
 import '../domain/schedule_service.dart';
@@ -487,6 +489,11 @@ class HomePage extends ConsumerWidget {
                 : Icons.weekend_outlined,
           ),
           const SizedBox(height: 22),
+          _PayoutSummaryCard(
+            data: data,
+            onAddPayout: () => showPayoutEditor(context, data: data),
+          ),
+          const SizedBox(height: 22),
           _SectionTitle(
             existing != null
                 ? (strings.isRu ? 'Итоги дня' : 'Today’s result')
@@ -873,6 +880,11 @@ class _StatisticsPageState extends ConsumerState<StatisticsPage> {
                       ? 'Средний заработок: ${money(data, earnings ~/ shifts.length)}'
                       : 'Average earnings: ${money(data, earnings ~/ shifts.length)}'),
           ),
+          const SizedBox(height: 20),
+          _PayoutsSection(
+            data: data,
+            controller: ref.read(appControllerProvider.notifier),
+          ),
         ],
       ),
     );
@@ -933,9 +945,10 @@ class ProfilePage extends ConsumerWidget {
           ),
           _SettingsTile(
             icon: Icons.payments_outlined,
-            title: strings.isRu ? 'Ставка и выручка' : 'Pay and revenue',
-            subtitle:
-                '${money(data, data.payment.dailyRateMinor)} + ${data.payment.revenuePercent}%',
+            title: strings.isRu ? 'Ставка и выплаты' : 'Pay and payouts',
+            subtitle: strings.isRu
+                ? '${money(data, data.payment.dailyRateMinor)} + ${data.payment.revenuePercent}% · Аванс: ${data.payment.advanceDay}-го, ЗП: ${data.payment.salaryDay}-го'
+                : '${money(data, data.payment.dailyRateMinor)} + ${data.payment.revenuePercent}% · Adv: day ${data.payment.advanceDay}, Sal: day ${data.payment.salaryDay}',
             onTap: () => _editPayment(context, data, controller),
           ),
           _SettingsTile(
@@ -979,6 +992,524 @@ class ProfilePage extends ConsumerWidget {
             onTap: () => _import(context, controller, strings.isRu),
           ),
         ],
+      ),
+    );
+  }
+}
+
+Future<void> showPayoutEditor(
+  BuildContext context, {
+  required AppState data,
+  Payout? existing,
+}) async {
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (context) => _PayoutEditor(data: data, existing: existing),
+  );
+}
+
+class _PayoutEditor extends ConsumerStatefulWidget {
+  const _PayoutEditor({
+    required this.data,
+    this.existing,
+  });
+  final AppState data;
+  final Payout? existing;
+
+  @override
+  ConsumerState<_PayoutEditor> createState() => _PayoutEditorState();
+}
+
+class _PayoutEditorState extends ConsumerState<_PayoutEditor> {
+  late DateTime date = widget.existing?.date ?? DateTime.now();
+  late PayoutKind kind = widget.existing?.kind ?? PayoutKind.advance;
+  late final TextEditingController amount = TextEditingController(
+    text: widget.existing == null
+        ? ''
+        : (widget.existing!.amountMinor / 100).toStringAsFixed(2),
+  );
+  late final TextEditingController comment = TextEditingController(
+    text: widget.existing?.comment ?? '',
+  );
+
+  @override
+  void dispose() {
+    amount.dispose();
+    comment.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: date,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) {
+      setState(() => date = picked);
+    }
+  }
+
+  Future<void> _submit() async {
+    final parsedAmount =
+        ((num.tryParse(amount.text.replaceAll(',', '.')) ?? 0) * 100).round();
+    if (parsedAmount <= 0) {
+      final isRu = widget.data.settings.language == AppLanguage.russian;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isRu
+                ? 'Укажите сумму выплаты больше нуля'
+                : 'Enter a payout amount greater than zero',
+          ),
+        ),
+      );
+      return;
+    }
+
+    await ref.read(appControllerProvider.notifier).savePayout(
+          id: widget.existing?.id,
+          date: date,
+          kind: kind,
+          amountMinor: parsedAmount,
+          comment: comment.text,
+        );
+
+    if (mounted) {
+      Navigator.pop(context);
+      final strings = Strings(widget.data.settings.language);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            strings.isRu ? 'Выплата сохранена' : 'Payout saved',
+          ),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = Strings(widget.data.settings.language);
+    final locale = strings.isRu ? 'ru_RU' : 'en_US';
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        16,
+        20,
+        20 + MediaQuery.viewInsetsOf(context).bottom,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.existing == null
+                        ? strings.addPayout
+                        : (strings.isRu
+                            ? 'Редактировать выплату'
+                            : 'Edit payout'),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SegmentedButton<PayoutKind>(
+              segments: [
+                ButtonSegment(
+                  value: PayoutKind.advance,
+                  label: Text(strings.advance),
+                  icon: const Icon(Icons.savings_outlined),
+                ),
+                ButtonSegment(
+                  value: PayoutKind.salary,
+                  label: Text(strings.salary),
+                  icon: const Icon(Icons.account_balance_wallet_outlined),
+                ),
+              ],
+              selected: {kind},
+              onSelectionChanged: (set) => setState(() => kind = set.first),
+            ),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: _pickDate,
+              icon: const Icon(Icons.calendar_today_rounded),
+              label: Text(
+                '${strings.payoutDate}: ${DateFormat.yMMMMd(locale).format(date)}',
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: amount,
+              autofocus: widget.existing == null,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: strings.payoutAmount,
+                prefixIcon: const Icon(Icons.payments_outlined),
+                suffixText: '₽',
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: comment,
+              decoration: InputDecoration(
+                labelText: strings.isRu
+                    ? 'Комментарий (необязательно)'
+                    : 'Comment (optional)',
+                prefixIcon: const Icon(Icons.notes_rounded),
+              ),
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: _submit,
+              icon: const Icon(Icons.check_circle_outline_rounded),
+              label: Text(strings.save),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PayoutSummaryCard extends StatelessWidget {
+  const _PayoutSummaryCard({
+    required this.data,
+    required this.onAddPayout,
+  });
+
+  final AppState data;
+  final VoidCallback onAddPayout;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = Strings(data.settings.language);
+    const finance = FinanceService();
+    final status = finance.calculatePayoutStatus(
+      state: data,
+      now: DateTime.now(),
+    );
+    final scheme = Theme.of(context).colorScheme;
+    final locale = strings.isRu ? 'ru_RU' : 'en_US';
+
+    final kindTitle = status.nextKind == PayoutKind.advance
+        ? strings.advance
+        : strings.salary;
+    final kindGenitive = status.nextKind == PayoutKind.advance
+        ? (strings.isRu ? 'аванса' : strings.advance.toLowerCase())
+        : (strings.isRu ? 'зарплаты' : strings.salary.toLowerCase());
+
+    final countdownText = status.daysLeft == 0
+        ? strings.todayIsPayoutDay
+        : (strings.isRu
+            ? 'До $kindGenitive осталось ${status.daysLeft} дн.'
+            : '${status.daysLeft} days until ${kindTitle.toLowerCase()}');
+
+    final dateFormatted = DateFormat.MMMMd(locale).format(status.nextDate);
+
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: scheme.primary.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(
+                    Icons.payments_rounded,
+                    color: scheme.primary,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        countdownText,
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: status.daysLeft == 0
+                                      ? scheme.primary
+                                      : scheme.onSurface,
+                                ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${strings.isRu ? "Плановая дата:" : "Target date:"} $dateFormatted',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton.filledTonal(
+                  onPressed: onAddPayout,
+                  icon: const Icon(Icons.add_rounded),
+                  tooltip: strings.addPayout,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Divider(height: 1),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        strings.earnedSinceLastPayout,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        money(data, status.earnedSinceLastPayoutMinor),
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  width: 1,
+                  height: 36,
+                  color: scheme.outlineVariant.withValues(alpha: 0.5),
+                  margin: const EdgeInsets.symmetric(horizontal: 12),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        strings.expectedNextPayout,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        money(data, status.estimatedNextPayoutMinor),
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: scheme.primary,
+                                ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (status.lastPayout != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                '${strings.isRu ? "Последняя выплата:" : "Last payout:"} ${status.lastPayout!.kind == PayoutKind.advance ? strings.advance : strings.salary} ${money(data, status.lastPayout!.amountMinor)} (${DateFormat.MMMd(locale).format(status.lastPayout!.date)})',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.outline,
+                      fontStyle: FontStyle.italic,
+                    ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PayoutsSection extends StatelessWidget {
+  const _PayoutsSection({
+    required this.data,
+    required this.controller,
+  });
+
+  final AppState data;
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = Strings(data.settings.language);
+    final locale = strings.isRu ? 'ru_RU' : 'en_US';
+    final scheme = Theme.of(context).colorScheme;
+    final payouts = [...data.payouts]..sort((a, b) => b.date.compareTo(a.date));
+
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.history_rounded, color: scheme.primary),
+                    const SizedBox(width: 8),
+                    Text(
+                      strings.payoutHistory,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ],
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: () => showPayoutEditor(context, data: data),
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: Text(strings.add),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (payouts.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                child: Center(
+                  child: Text(
+                    strings.noPayoutsYet,
+                    style: TextStyle(color: scheme.onSurfaceVariant),
+                  ),
+                ),
+              )
+            else
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: payouts.length,
+                separatorBuilder: (context, index) => Divider(
+                  height: 1,
+                  color: scheme.outlineVariant.withValues(alpha: 0.3),
+                ),
+                itemBuilder: (context, i) {
+                  final item = payouts[i];
+                  final kindName = item.kind == PayoutKind.advance
+                      ? strings.advance
+                      : strings.salary;
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      backgroundColor: item.kind == PayoutKind.advance
+                          ? scheme.tertiaryContainer
+                          : scheme.primaryContainer,
+                      child: Icon(
+                        item.kind == PayoutKind.advance
+                            ? Icons.savings_outlined
+                            : Icons.account_balance_wallet_outlined,
+                        color: item.kind == PayoutKind.advance
+                            ? scheme.onTertiaryContainer
+                            : scheme.onPrimaryContainer,
+                        size: 20,
+                      ),
+                    ),
+                    title: Text(
+                      '$kindName: ${money(data, item.amountMinor)}',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      '${DateFormat.yMMMMd(locale).format(item.date)}${item.comment.isNotEmpty ? " · ${item.comment}" : ""}',
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined, size: 20),
+                          onPressed: () => showPayoutEditor(
+                            context,
+                            data: data,
+                            existing: item,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 20),
+                          onPressed: () async {
+                            final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: Text(strings.isRu
+                                    ? 'Удалить выплату?'
+                                    : 'Delete payout?'),
+                                content: Text(
+                                  strings.isRu
+                                      ? 'Вы уверены, что хотите удалить запись о выплате $kindName на ${money(data, item.amountMinor)}?'
+                                      : 'Are you sure you want to delete this $kindName payout?',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(context, false),
+                                    child: Text(strings.cancel),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () =>
+                                        Navigator.pop(context, true),
+                                    child: Text(
+                                        strings.isRu ? 'Удалить' : 'Delete'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirm == true) {
+                              await controller.deletePayout(item.id);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -2503,59 +3034,91 @@ Future<void> _editPayment(
   AppState data,
   AppController controller,
 ) async {
+  final strings = Strings(data.settings.language);
   final rate = TextEditingController(
     text: (data.payment.dailyRateMinor / 100).toStringAsFixed(2),
   );
   final percent = TextEditingController(text: '${data.payment.revenuePercent}');
+  final advanceDay = TextEditingController(text: '${data.payment.advanceDay}');
+  final salaryDay = TextEditingController(text: '${data.payment.salaryDay}');
   final result = await showDialog<PaymentSettings>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('Ставка и выручка'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: rate,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(labelText: 'Дневная ставка'),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: percent,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Процент от выручки',
-              suffixText: '%',
+      title: Text(strings.isRu ? 'Ставка и выплаты' : 'Rate and payouts'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: rate,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: strings.isRu ? 'Дневная ставка' : 'Daily rate',
+                suffixText: '₽',
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 12),
+            TextField(
+              controller: percent,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: strings.isRu ? 'Процент от выручки' : 'Revenue percent',
+                suffixText: '%',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: advanceDay,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: strings.advanceDayLabel,
+                helperText: strings.isRu ? 'Число месяца (1–31)' : 'Day of month (1–31)',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: salaryDay,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: strings.salaryDayLabel,
+                helperText: strings.isRu ? 'Число месяца (1–31)' : 'Day of month (1–31)',
+              ),
+            ),
+          ],
+        ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Отмена'),
+          child: Text(strings.cancel),
         ),
         FilledButton(
-          onPressed: () => Navigator.pop(
-            context,
-            PaymentSettings(
-              dailyRateMinor:
-                  ((num.tryParse(rate.text.replaceAll(',', '.')) ?? 0) * 100)
-                      .round(),
-              revenuePercent:
-                  num.tryParse(percent.text.replaceAll(',', '.'))?.toDouble() ??
-                  0,
-              advanceDay: data.payment.advanceDay,
-              salaryDay: data.payment.salaryDay,
-            ),
-          ),
-          child: const Text('Сохранить'),
+          onPressed: () {
+            final parsedAdv = int.tryParse(advanceDay.text.trim()) ?? data.payment.advanceDay;
+            final parsedSal = int.tryParse(salaryDay.text.trim()) ?? data.payment.salaryDay;
+            Navigator.pop(
+              context,
+              PaymentSettings(
+                dailyRateMinor:
+                    ((num.tryParse(rate.text.replaceAll(',', '.')) ?? 0) * 100)
+                        .round(),
+                revenuePercent:
+                    num.tryParse(percent.text.replaceAll(',', '.'))?.toDouble() ??
+                    0,
+                advanceDay: parsedAdv.clamp(1, 31),
+                salaryDay: parsedSal.clamp(1, 31),
+              ),
+            );
+          },
+          child: Text(strings.save),
         ),
       ],
     ),
   );
   rate.dispose();
   percent.dispose();
+  advanceDay.dispose();
+  salaryDay.dispose();
   if (result != null) {
     await controller.updatePayment(result);
   }
@@ -2723,7 +3286,7 @@ Future<void> _import(
   if (confirmed != true) return;
   try {
     await controller.importBackup(
-      String.fromCharCodes(picked.files.single.bytes!),
+      utf8.decode(picked.files.single.bytes!),
     );
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

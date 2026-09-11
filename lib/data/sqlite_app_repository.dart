@@ -7,20 +7,20 @@ import '../domain/models.dart';
 import 'app_repository.dart';
 
 class SqliteAppRepository implements AppRepository {
-  Database? _database;
+  Future<Database>? _dbFuture;
 
-  Future<Database> get _db async {
-    final cached = _database;
-    if (cached != null) return cached;
-    final directory = await getDatabasesPath();
-    _database = await openDatabase(
-      path.join(directory, 'aperture_grafik.db'),
-      version: 1,
-      onCreate: (db, _) => db.execute(
-        'CREATE TABLE app_state (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)',
-      ),
-    );
-    return _database!;
+  Future<Database> get _db {
+    _dbFuture ??= () async {
+      final directory = await getDatabasesPath();
+      return openDatabase(
+        path.join(directory, 'aperture_grafik.db'),
+        version: 1,
+        onCreate: (db, _) => db.execute(
+          'CREATE TABLE app_state (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)',
+        ),
+      );
+    }();
+    return _dbFuture!;
   }
 
   @override
@@ -35,7 +35,8 @@ class SqliteAppRepository implements AppRepository {
       return AppState.fromJson(
         jsonDecode(rows.single['payload']! as String) as Map<String, dynamic>,
       );
-    } on FormatException {
+    } catch (error) {
+      // Return initial state only if payload is missing or unparseable, but do not clear DB automatically
       return AppState.initial();
     }
   }

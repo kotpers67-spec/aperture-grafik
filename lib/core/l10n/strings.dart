@@ -16,4 +16,18 @@ class Strings {
   String get save => isRu ? 'Сохранить' : 'Save';
   String get cancel => isRu ? 'Отмена' : 'Cancel';
   String get add => isRu ? 'Добавить' : 'Add';
+  String get advance => isRu ? 'Аванс' : 'Advance';
+  String get salary => isRu ? 'Зарплата' : 'Salary';
+  String get payouts => isRu ? 'Выплаты' : 'Payouts';
+  String get addPayout => isRu ? 'Внести выплату' : 'Add payout';
+  String get payoutHistory => isRu ? 'История выплат' : 'Payout history';
+  String get earnedSinceLastPayout => isRu ? 'Заработано с последней выплаты' : 'Earned since last payout';
+  String get expectedNextPayout => isRu ? 'К следующей выплате' : 'Next payout expected';
+  String get todayIsPayoutDay => isRu ? 'Сегодня день выплаты!' : 'Today is payout day!';
+  String get payoutDate => isRu ? 'Дата выплаты' : 'Payout date';
+  String get payoutAmount => isRu ? 'Сумма выплаты' : 'Payout amount';
+  String get payoutKind => isRu ? 'Тип выплаты' : 'Payout type';
+  String get noPayoutsYet => isRu ? 'Выплат пока не внесено' : 'No payouts recorded yet';
+  String get advanceDayLabel => isRu ? 'День аванса' : 'Advance day';
+  String get salaryDayLabel => isRu ? 'День зарплаты' : 'Salary day';
 }

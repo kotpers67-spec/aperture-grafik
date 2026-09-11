@@ -86,7 +86,140 @@ void main() {
     expect(recommendation.referenceMinor, greaterThan(1800000));
     expect(recommendation.usuallyHigherOnThisWeekday, isTrue);
   });
+
+  group('Payout & FinanceService calculations', () {
+    const finance = FinanceService();
+
+    test('calculates countdown and upcoming payout kind correctly', () {
+      final state = AppState.initial().copyWith(
+        payment: const PaymentSettings(
+          dailyRateMinor: 300000,
+          revenuePercent: 5,
+          advanceDay: 15,
+          salaryDay: 30,
+        ),
+      );
+
+      // Before advance
+      final statusBeforeAdv = finance.calculatePayoutStatus(
+        state: state,
+        now: DateTime(2026, 7, 5),
+      );
+      expect(statusBeforeAdv.nextKind, PayoutKind.advance);
+      expect(statusBeforeAdv.daysLeft, 10);
+      expect(statusBeforeAdv.nextDate, DateTime(2026, 7, 15));
+
+      // On advance day
+      final statusOnAdv = finance.calculatePayoutStatus(
+        state: state,
+        now: DateTime(2026, 7, 15),
+      );
+      expect(statusOnAdv.nextKind, PayoutKind.advance);
+      expect(statusOnAdv.daysLeft, 0);
+
+      // After advance, before salary
+      final statusBeforeSal = finance.calculatePayoutStatus(
+        state: state,
+        now: DateTime(2026, 7, 16),
+      );
+      expect(statusBeforeSal.nextKind, PayoutKind.salary);
+      expect(statusBeforeSal.daysLeft, 14);
+      expect(statusBeforeSal.nextDate, DateTime(2026, 7, 30));
+
+      // After salary (e.g. July 31) -> next is August 15 Advance
+      final statusAfterSal = finance.calculatePayoutStatus(
+        state: state,
+        now: DateTime(2026, 7, 31),
+      );
+      expect(statusAfterSal.nextKind, PayoutKind.advance);
+      expect(statusAfterSal.daysLeft, 15);
+      expect(statusAfterSal.nextDate, DateTime(2026, 8, 15));
+    });
+
+    test('calculates earned since last payout and next expected salary correctly', () {
+      final shifts = [
+        _shiftWithEarnings(DateTime(2026, 7, 5), 500000),
+        _shiftWithEarnings(DateTime(2026, 7, 10), 500000),
+        _shiftWithEarnings(DateTime(2026, 7, 18), 500000),
+        _shiftWithEarnings(DateTime(2026, 7, 22), 500000),
+      ];
+
+      final advancePayout = Payout(
+        id: 'payout-1',
+        date: DateTime(2026, 7, 15),
+        kind: PayoutKind.advance,
+        amountMinor: 1000000,
+        comment: 'Advance',
+        createdAt: DateTime(2026, 7, 15),
+        updatedAt: DateTime(2026, 7, 15),
+      );
+
+      final state = AppState.initial().copyWith(
+        payment: const PaymentSettings(
+          dailyRateMinor: 300000,
+          revenuePercent: 5,
+          advanceDay: 15,
+          salaryDay: 30,
+        ),
+        shifts: shifts,
+        payouts: [advancePayout],
+      );
+
+      final status = finance.calculatePayoutStatus(
+        state: state,
+        now: DateTime(2026, 7, 25),
+      );
+
+      expect(status.lastPayout?.id, 'payout-1');
+      // Shifts on July 18 and July 22 are after July 15 payout: 500000 + 500000 = 1000000
+      expect(status.earnedSinceLastPayoutMinor, 1000000);
+      // Next is Salary (July 30). Total earned in July = 2000000. Advance paid = 1000000.
+      // Expected remaining salary = 2000000 - 1000000 = 1000000.
+      expect(status.nextKind, PayoutKind.salary);
+      expect(status.estimatedNextPayoutMinor, 1000000);
+    });
+
+    test('Payout JSON serialization and AppState roundtrip', () {
+      final payout = Payout(
+        id: 'p-1',
+        date: DateTime(2026, 7, 15),
+        kind: PayoutKind.salary,
+        amountMinor: 4500000,
+        comment: 'Salary for July',
+        createdAt: DateTime(2026, 7, 15, 10, 0),
+        updatedAt: DateTime(2026, 7, 15, 10, 0),
+      );
+
+      final json = payout.toJson();
+      final parsed = Payout.fromJson(json);
+      expect(parsed.id, 'p-1');
+      expect(parsed.kind, PayoutKind.salary);
+      expect(parsed.amountMinor, 4500000);
+      expect(parsed.comment, 'Salary for July');
+
+      final state = AppState.initial().copyWith(payouts: [payout]);
+      final stateJson = state.toJson();
+      final restored = AppState.fromJson(stateJson);
+      expect(restored.payouts.length, 1);
+      expect(restored.payouts.first.id, 'p-1');
+      expect(restored.payouts.first.amountMinor, 4500000);
+    });
+  });
 }
+
+Shift _shiftWithEarnings(DateTime date, int earningsMinor) => Shift(
+  id: date.toIso8601String(),
+  date: date,
+  kind: ShiftKind.scheduled,
+  actualStart: date.add(const Duration(hours: 9)),
+  actualEnd: date.add(const Duration(hours: 21)),
+  colleagueIds: const [],
+  revenueMinor: 0,
+  earningsMinor: earningsMinor,
+  comment: '',
+  createdAt: date,
+  updatedAt: date,
+);
 
 Shift _shift(DateTime date, int revenueMinor) => Shift(
   id: date.toIso8601String(),
