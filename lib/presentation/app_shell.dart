@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../application/app_controller.dart';
 import '../core/l10n/strings.dart';
+import '../core/notifications/notification_service.dart';
 import '../core/theme/app_theme.dart';
 import '../domain/finance_service.dart';
 import '../domain/models.dart';
@@ -1175,7 +1176,10 @@ Future<void> _promptUpdate(
 
   if (proceed != true || !context.mounted) return;
 
-  final progressNotifier = ValueNotifier<double>(0.0);
+  final progressNotifier = ValueNotifier<DownloadProgress>(
+    const DownloadProgress(fraction: 0.0, receivedBytes: 0, totalBytes: 0),
+  );
+
   showDialog<void>(
     context: context,
     barrierDismissible: false,
@@ -1183,16 +1187,30 @@ Future<void> _promptUpdate(
       canPop: false,
       child: AlertDialog(
         title: Text(strings.downloadingUpdate),
-        content: ValueListenableBuilder<double>(
+        content: ValueListenableBuilder<DownloadProgress>(
           valueListenable: progressNotifier,
-          builder: (context, value, _) {
-            final percent = value >= 0 ? (value * 100).toInt() : null;
+          builder: (context, progress, _) {
+            final percent = progress.fraction >= 0
+                ? (progress.fraction * 100).toInt().clamp(0, 100)
+                : null;
+            final eta = progress.etaString(strings.isRu);
+            final statusText = percent != null
+                ? (eta.isNotEmpty ? '$percent% · Осталось ~$eta' : '$percent%')
+                : strings.downloadingUpdate;
+
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                LinearProgressIndicator(value: value >= 0 ? value : null),
+                LinearProgressIndicator(
+                  value: progress.fraction >= 0 ? progress.fraction : null,
+                ),
                 const SizedBox(height: 12),
-                Text(percent != null ? '$percent%' : strings.downloadingUpdate),
+                Text(
+                  statusText,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ],
             );
           },
@@ -1203,18 +1221,37 @@ Future<void> _promptUpdate(
 
   try {
     final targetPath = await updateService.getLocalApkPath();
+    var lastNotifPercent = -5;
+
     await for (final progress in updateService.downloadApk(
       downloadUrl: release.downloadUrl,
       targetPath: targetPath,
     )) {
       progressNotifier.value = progress;
+      final percent = progress.fraction >= 0
+          ? (progress.fraction * 100).toInt().clamp(0, 100)
+          : 0;
+
+      // Update background notification every 5%
+      if (percent - lastNotifPercent >= 5 || percent == 100) {
+        lastNotifPercent = percent;
+        final eta = progress.etaString(strings.isRu);
+        await NotificationService.instance.showDownloadProgress(
+          percent: percent,
+          etaText: eta.isNotEmpty ? eta : (strings.isRu ? 'рассчитывается...' : 'calculating...'),
+          isRussian: strings.isRu,
+        );
+      }
     }
+
+    await NotificationService.instance.showDownloadCompleted(isRussian: strings.isRu);
 
     if (context.mounted) {
       Navigator.pop(context);
       await updateService.installApk(targetPath);
     }
   } catch (e) {
+    await NotificationService.instance.cancelDownloadNotification();
     if (context.mounted) {
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1224,6 +1261,20 @@ Future<void> _promptUpdate(
         ),
       );
     }
+  }
+}
+
+Future<void> _openExternalUrl(String rawUrl) async {
+  final uri = Uri.parse(rawUrl);
+  try {
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched) {
+      await launchUrl(uri, mode: LaunchMode.platformDefault);
+    }
+  } catch (_) {
+    try {
+      await launchUrl(uri, mode: LaunchMode.platformDefault);
+    } catch (_) {}
   }
 }
 
@@ -1247,7 +1298,7 @@ Future<void> _showRatingDialog(
         builder: (context, setModalState) {
           final isHigh = selectedStars >= 4;
           return SafeArea(
-            child: Padding(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -1265,7 +1316,7 @@ Future<void> _showRatingDialog(
                       color: Theme.of(context).colorScheme.primary,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 14),
                   Text(
                     strings.rateDialogTitle,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
@@ -1273,7 +1324,7 @@ Future<void> _showRatingDialog(
                     ),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
                     strings.rateDialogSubtitle,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -1281,7 +1332,7 @@ Future<void> _showRatingDialog(
                     ),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: List.generate(5, (starIndex) {
@@ -1301,7 +1352,7 @@ Future<void> _showRatingDialog(
                       );
                     }),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 14),
                   Text(
                     isHigh ? strings.ratingHighNotice : strings.ratingLowNotice,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -1309,59 +1360,62 @@ Future<void> _showRatingDialog(
                     ),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 18),
                   if (isHigh) ...[
                     FilledButton.icon(
                       onPressed: () async {
                         controller.updateSettings(
                           data.settings.copyWith(hasRatedProject: true),
                         );
-                        final uri = Uri.parse('https://github.com/santiyastudio-lgtm/aperture-grafik');
-                        if (await canLaunchUrl(uri)) {
-                          await launchUrl(uri, mode: LaunchMode.externalApplication);
-                        }
+                        await _openExternalUrl('https://github.com/santiyastudio-lgtm/aperture-grafik');
                         if (context.mounted) Navigator.pop(context);
                       },
                       icon: const Icon(Icons.star_rounded),
                       label: Text(strings.starOnGitHub),
                       style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(48),
+                        minimumSize: const Size.fromHeight(46),
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
                     OutlinedButton.icon(
                       onPressed: () async {
                         controller.updateSettings(
                           data.settings.copyWith(hasRatedProject: true),
                         );
-                        final uri = Uri.parse('https://gitlab.com/santiyastudio-lgtm/aperture-grafik');
-                        if (await canLaunchUrl(uri)) {
-                          await launchUrl(uri, mode: LaunchMode.externalApplication);
-                        }
+                        await _openExternalUrl('https://gitlab.com/santiyastudio/aperture-grafik');
                         if (context.mounted) Navigator.pop(context);
                       },
                       icon: const Icon(Icons.code_rounded),
                       label: Text(strings.starOnGitLab),
                       style: OutlinedButton.styleFrom(
-                        minimumSize: const Size.fromHeight(48),
-                      ),
-                    ),
-                  ] else ...[
-                    FilledButton.icon(
-                      onPressed: () async {
-                        final uri = Uri.parse('https://github.com/santiyastudio-lgtm/aperture-grafik/issues');
-                        if (await canLaunchUrl(uri)) {
-                          await launchUrl(uri, mode: LaunchMode.externalApplication);
-                        }
-                        if (context.mounted) Navigator.pop(context);
-                      },
-                      icon: const Icon(Icons.feedback_outlined),
-                      label: Text(strings.feedbackOnGitHub),
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(48),
+                        minimumSize: const Size.fromHeight(46),
                       ),
                     ),
                   ],
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      await _openExternalUrl('https://t.me/SantiLA213');
+                      if (context.mounted) Navigator.pop(context);
+                    },
+                    icon: const Icon(Icons.send_rounded, size: 18),
+                    label: const Text('Telegram @SantiLA213'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(46),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      await _openExternalUrl('https://t.me/Spirit5449');
+                      if (context.mounted) Navigator.pop(context);
+                    },
+                    icon: const Icon(Icons.send_rounded, size: 18),
+                    label: const Text('Telegram @Spirit5449'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(46),
+                    ),
+                  ),
                 ],
               ),
             ),

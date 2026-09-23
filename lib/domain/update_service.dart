@@ -31,6 +31,29 @@ class AppReleaseInfo {
   }
 }
 
+class DownloadProgress {
+  const DownloadProgress({
+    required this.fraction,
+    required this.receivedBytes,
+    required this.totalBytes,
+    this.remainingSeconds,
+  });
+
+  final double fraction;
+  final int receivedBytes;
+  final int totalBytes;
+  final int? remainingSeconds;
+
+  String etaString(bool isRu) {
+    if (remainingSeconds == null || remainingSeconds! <= 0) return '';
+    if (remainingSeconds! >= 60) {
+      final mins = (remainingSeconds! / 60).ceil();
+      return isRu ? '$mins мин' : '$mins min';
+    }
+    return isRu ? '$remainingSeconds сек' : '$remainingSeconds sec';
+  }
+}
+
 class SemVer {
   const SemVer({
     required this.major,
@@ -235,7 +258,7 @@ class UpdateService {
     );
   }
 
-  Stream<double> downloadApk({
+  Stream<DownloadProgress> downloadApk({
     required String downloadUrl,
     required String targetPath,
     http.Client? client,
@@ -274,6 +297,7 @@ class UpdateService {
 
       final totalBytes = streamedResponse.contentLength ?? 0;
       var receivedBytes = 0;
+      final startTime = DateTime.now();
 
       final file = File(targetPath);
       if (await file.exists()) {
@@ -286,11 +310,21 @@ class UpdateService {
         await for (final chunk in streamedResponse.stream) {
           sink.add(chunk);
           receivedBytes += chunk.length;
-          if (totalBytes > 0) {
-            yield receivedBytes / totalBytes;
-          } else {
-            yield -1.0;
+
+          final fraction = totalBytes > 0 ? (receivedBytes / totalBytes) : -1.0;
+          final elapsedMs = DateTime.now().difference(startTime).inMilliseconds;
+          int? remainingSec;
+          if (elapsedMs > 400 && fraction > 0.02 && fraction < 1.0) {
+            final totalEstimatedMs = elapsedMs / fraction;
+            remainingSec = ((totalEstimatedMs - elapsedMs) / 1000).round();
           }
+
+          yield DownloadProgress(
+            fraction: fraction,
+            receivedBytes: receivedBytes,
+            totalBytes: totalBytes,
+            remainingSeconds: remainingSec,
+          );
         }
         await sink.flush();
       } finally {
@@ -302,7 +336,12 @@ class UpdateService {
       }
     }
 
-    yield 1.0;
+    yield const DownloadProgress(
+      fraction: 1.0,
+      receivedBytes: 1,
+      totalBytes: 1,
+      remainingSeconds: 0,
+    );
   }
 
   Future<String> getLocalApkPath() async {

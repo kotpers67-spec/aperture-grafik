@@ -436,4 +436,65 @@ class NotificationService {
       priority: Priority.high,
     ),
   );
+
+  static const _downloadNotificationId = 3000;
+
+  Future<void> showDownloadProgress({
+    required int percent,
+    required String etaText,
+    required bool isRussian,
+  }) async {
+    final title = isRussian
+        ? 'Загрузка обновления'
+        : 'Downloading update';
+    final body = isRussian
+        ? '$percent% · Осталось: $etaText'
+        : '$percent% · Remaining: $etaText';
+
+    final details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'app_updates',
+        isRussian ? 'Обновления приложения' : 'App updates',
+        channelDescription: isRussian
+            ? 'Прогресс скачивания обновлений'
+            : 'Download progress of app updates',
+        importance: Importance.low,
+        priority: Priority.low,
+        onlyAlertOnce: true,
+        showProgress: true,
+        maxProgress: 100,
+        progress: percent,
+        ongoing: true,
+        autoCancel: false,
+      ),
+    );
+
+    await _plugin.show(_downloadNotificationId, title, body, details);
+  }
+
+  Future<void> showDownloadCompleted({required bool isRussian}) async {
+    final title = isRussian ? 'Обновление загружено' : 'Update downloaded';
+    final body = isRussian
+        ? 'Нажмите для завершения установки 🚀'
+        : 'Tap to complete installation 🚀';
+
+    final details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'app_updates',
+        isRussian ? 'Обновления приложения' : 'App updates',
+        channelDescription: isRussian
+            ? 'Прогресс скачивания обновлений'
+            : 'Download progress of app updates',
+        importance: Importance.high,
+        priority: Priority.high,
+        autoCancel: true,
+      ),
+    );
+
+    await _plugin.show(_downloadNotificationId, title, body, details);
+  }
+
+  Future<void> cancelDownloadNotification() async {
+    await _plugin.cancel(_downloadNotificationId);
+  }
 }
