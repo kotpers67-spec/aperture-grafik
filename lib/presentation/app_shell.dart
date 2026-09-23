@@ -30,6 +30,36 @@ class AppShell extends ConsumerStatefulWidget {
 
 class _AppShellState extends ConsumerState<AppShell> {
   int index = 0;
+  static bool _hasCheckedUpdatesOnStartup = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!_hasCheckedUpdatesOnStartup) {
+      _hasCheckedUpdatesOnStartup = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _silentCheckUpdates();
+      });
+    }
+  }
+
+  Future<void> _silentCheckUpdates() async {
+    try {
+      PackageInfo? packageInfo;
+      try {
+        packageInfo = await PackageInfo.fromPlatform();
+      } catch (_) {}
+      final currentVersion = packageInfo?.version ?? '0.3.0';
+
+      const updateService = UpdateService();
+      final release = await updateService.checkForUpdates(currentVersion: currentVersion);
+
+      if (!mounted || release == null || !release.isNewer) return;
+      final data = ref.read(appControllerProvider).asData?.value;
+      final strings = Strings(data?.settings.language ?? AppLanguage.russian);
+      await _promptUpdate(context, release, currentVersion, strings);
+    } catch (_) {}
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1088,6 +1118,16 @@ Future<void> _handleCheckUpdates(BuildContext context, Strings strings) async {
     return;
   }
 
+  await _promptUpdate(context, release, currentVersion, strings);
+}
+
+Future<void> _promptUpdate(
+  BuildContext context,
+  AppReleaseInfo release,
+  String currentVersion,
+  Strings strings,
+) async {
+  const updateService = UpdateService();
   final proceed = await showDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog(
@@ -1095,7 +1135,7 @@ Future<void> _handleCheckUpdates(BuildContext context, Strings strings) async {
         children: [
           Icon(Icons.system_update_rounded, color: Theme.of(dialogContext).colorScheme.primary),
           const SizedBox(width: 10),
-          Expanded(child: Text('${strings.updateAvailable} ${release!.tag}')),
+          Expanded(child: Text('${strings.updateAvailable} ${release.tag}')),
         ],
       ),
       content: SingleChildScrollView(

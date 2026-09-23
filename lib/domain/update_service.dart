@@ -84,8 +84,10 @@ class SemVer {
 class UpdateService {
   const UpdateService();
 
-  static const String githubRepo = 'santiyastudio-lgtm/aperture-grafik';
+  // Primary: GitLab (public project & generic package registry)
   static const String gitlabProject = 'santiyastudio%2Faperture-grafik';
+  // Secondary: GitHub (backup mirror)
+  static const String githubRepo = 'santiyastudio-lgtm/aperture-grafik';
 
   Future<AppReleaseInfo?> checkForUpdates({
     required String currentVersion,
@@ -93,7 +95,41 @@ class UpdateService {
   }) async {
     final httpClient = client ?? http.Client();
     try {
-      // 1. Try GitHub Releases API
+      // 1. Primary: Try GitLab Releases API
+      try {
+        final uri = Uri.parse('https://gitlab.com/api/v4/projects/$gitlabProject/releases/permalink/latest');
+        final response = await httpClient.get(
+          uri,
+          headers: {
+            'User-Agent': 'ApertureGrafik-Updater',
+          },
+        ).timeout(const Duration(seconds: 8));
+
+        if (response.statusCode == 200) {
+          final json = jsonDecode(response.body) as Map<String, dynamic>;
+          final release = _parseGitlabRelease(json, currentVersion);
+          if (release != null) return release;
+        }
+      } catch (_) {
+        // Fallback to GitLab list
+        try {
+          final uri = Uri.parse('https://gitlab.com/api/v4/projects/$gitlabProject/releases?per_page=1');
+          final response = await httpClient.get(
+            uri,
+            headers: {'User-Agent': 'ApertureGrafik-Updater'},
+          ).timeout(const Duration(seconds: 8));
+
+          if (response.statusCode == 200) {
+            final list = jsonDecode(response.body) as List<dynamic>;
+            if (list.isNotEmpty && list.first is Map<String, dynamic>) {
+              final release = _parseGitlabRelease(list.first as Map<String, dynamic>, currentVersion);
+              if (release != null) return release;
+            }
+          }
+        } catch (_) {}
+      }
+
+      // 2. Secondary Fallback: Try GitHub Releases API
       try {
         final uri = Uri.parse('https://api.github.com/repos/$githubRepo/releases/latest');
         final response = await httpClient.get(
@@ -110,26 +146,7 @@ class UpdateService {
           if (release != null) return release;
         }
       } catch (_) {
-        // Fallback to GitLab
-      }
-
-      // 2. Fallback to GitLab Releases API
-      try {
-        final uri = Uri.parse('https://gitlab.com/api/v4/projects/$gitlabProject/releases/permalink/latest');
-        final response = await httpClient.get(
-          uri,
-          headers: {
-            'User-Agent': 'ApertureGrafik-Updater',
-          },
-        ).timeout(const Duration(seconds: 8));
-
-        if (response.statusCode == 200) {
-          final json = jsonDecode(response.body) as Map<String, dynamic>;
-          final release = _parseGitlabRelease(json, currentVersion);
-          if (release != null) return release;
-        }
-      } catch (_) {
-        // Network or parse failure
+        // All sources unavailable or network offline
       }
 
       return null;
@@ -138,6 +155,44 @@ class UpdateService {
         httpClient.close();
       }
     }
+  }
+
+  AppReleaseInfo? _parseGitlabRelease(Map<String, dynamic> json, String currentVersion) {
+    final tagName = json['tag_name'] as String? ?? '';
+    final description = json['description'] as String? ?? '';
+    final releasedAtStr = json['released_at'] as String?;
+    final releasedAt = releasedAtStr != null ? DateTime.tryParse(releasedAtStr) : null;
+
+    final assets = (json['assets'] as Map<String, dynamic>?)?['links'] as List<dynamic>? ?? <dynamic>[];
+    String? apkUrl;
+
+    for (final asset in assets) {
+      if (asset is Map<String, dynamic>) {
+        final name = (asset['name'] as String? ?? '').toLowerCase();
+        final url = (asset['url'] as String? ?? '');
+        final directUrl = (asset['direct_asset_url'] as String? ?? '');
+        if (name.endsWith('.apk') || url.endsWith('.apk') || directUrl.endsWith('.apk')) {
+          apkUrl = directUrl.isNotEmpty ? directUrl : url;
+          break;
+        }
+      }
+    }
+
+    final rawVersion = tagName.replaceFirst(RegExp(r'^[vV]'), '');
+    apkUrl ??= 'https://gitlab.com/api/v4/projects/$gitlabProject/packages/generic/aperture-grafik/$rawVersion/aperture-grafik.apk';
+
+    final remoteSemver = SemVer.parse(tagName);
+    final localSemver = SemVer.parse(currentVersion);
+    final isNewer = remoteSemver.isNewerThan(localSemver);
+
+    return AppReleaseInfo(
+      tag: tagName,
+      version: remoteSemver.toString(),
+      notes: description,
+      downloadUrl: apkUrl,
+      publishedAt: releasedAt,
+      isNewer: isNewer,
+    );
   }
 
   AppReleaseInfo? _parseGithubRelease(Map<String, dynamic> json, String currentVersion) {
@@ -180,79 +235,68 @@ class UpdateService {
     );
   }
 
-  AppReleaseInfo? _parseGitlabRelease(Map<String, dynamic> json, String currentVersion) {
-    final tagName = json['tag_name'] as String? ?? '';
-    final description = json['description'] as String? ?? '';
-    final releasedAtStr = json['released_at'] as String?;
-    final releasedAt = releasedAtStr != null ? DateTime.tryParse(releasedAtStr) : null;
-
-    final assets = (json['assets'] as Map<String, dynamic>?)?['links'] as List<dynamic>? ?? <dynamic>[];
-    String? apkUrl;
-
-    for (final asset in assets) {
-      if (asset is Map<String, dynamic>) {
-        final name = (asset['name'] as String? ?? '').toLowerCase();
-        if (name.endsWith('.apk')) {
-          apkUrl = asset['url'] as String?;
-          break;
-        }
-      }
-    }
-
-    apkUrl ??= 'https://gitlab.com/santiyastudio/aperture-grafik/-/releases/$tagName/downloads/aperture-grafik.apk';
-
-    final remoteSemver = SemVer.parse(tagName);
-    final localSemver = SemVer.parse(currentVersion);
-    final isNewer = remoteSemver.isNewerThan(localSemver);
-
-    return AppReleaseInfo(
-      tag: tagName,
-      version: remoteSemver.toString(),
-      notes: description,
-      downloadUrl: apkUrl,
-      publishedAt: releasedAt,
-      isNewer: isNewer,
-    );
-  }
-
   Stream<double> downloadApk({
     required String downloadUrl,
     required String targetPath,
     http.Client? client,
   }) async* {
     final httpClient = client ?? http.Client();
-    final request = http.Request('GET', Uri.parse(downloadUrl));
-    request.headers['User-Agent'] = 'ApertureGrafik-Updater';
-
-    final response = await httpClient.send(request);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw HttpException('Failed to download update: HTTP ${response.statusCode}');
-    }
-
-    final totalBytes = response.contentLength ?? 0;
-    var receivedBytes = 0;
-
-    final file = File(targetPath);
-    if (await file.exists()) {
-      await file.delete();
-    }
-    await file.create(recursive: true);
-
-    final sink = file.openWrite();
-
     try {
-      await for (final chunk in response.stream) {
-        sink.add(chunk);
-        receivedBytes += chunk.length;
-        if (totalBytes > 0) {
-          yield receivedBytes / totalBytes;
-        } else {
-          yield -1.0;
+      var currentUrl = Uri.parse(downloadUrl);
+      http.StreamedResponse? streamedResponse;
+      var redirectCount = 0;
+
+      while (redirectCount < 6) {
+        final request = http.Request('GET', currentUrl);
+        request.headers['User-Agent'] = 'ApertureGrafik-Updater';
+        final response = await httpClient.send(request);
+
+        if (response.statusCode >= 300 && response.statusCode < 400) {
+          final location = response.headers['location'];
+          if (location != null && location.isNotEmpty) {
+            currentUrl = currentUrl.resolve(location);
+            redirectCount++;
+            continue;
+          }
         }
+
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          throw HttpException('Failed to download update: HTTP ${response.statusCode}');
+        }
+
+        streamedResponse = response;
+        break;
       }
-      await sink.flush();
+
+      if (streamedResponse == null) {
+        throw const HttpException('Too many redirects while downloading update');
+      }
+
+      final totalBytes = streamedResponse.contentLength ?? 0;
+      var receivedBytes = 0;
+
+      final file = File(targetPath);
+      if (await file.exists()) {
+        await file.delete();
+      }
+      await file.create(recursive: true);
+
+      final sink = file.openWrite();
+      try {
+        await for (final chunk in streamedResponse.stream) {
+          sink.add(chunk);
+          receivedBytes += chunk.length;
+          if (totalBytes > 0) {
+            yield receivedBytes / totalBytes;
+          } else {
+            yield -1.0;
+          }
+        }
+        await sink.flush();
+      } finally {
+        await sink.close();
+      }
     } finally {
-      await sink.close();
       if (client == null) {
         httpClient.close();
       }
