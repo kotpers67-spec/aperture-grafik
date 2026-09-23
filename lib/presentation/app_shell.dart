@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../application/app_controller.dart';
 import '../core/l10n/strings.dart';
@@ -957,6 +958,15 @@ class ProfilePage extends ConsumerWidget {
                 ? 'Повтор каждые 30 минут, пока смена не заполнена'
                 : 'Every 30 minutes until the shift is completed',
           ),
+          _SettingsSwitch(
+            value: data.settings.payoutNotificationsEnabled,
+            onChanged: (value) => controller.updateSettings(
+              data.settings.copyWith(payoutNotificationsEnabled: value),
+            ),
+            icon: Icons.paid_outlined,
+            title: strings.payoutNotifications,
+            subtitle: strings.payoutNotificationsSubtitle,
+          ),
           const SizedBox(height: 18),
           _SectionTitle(strings.isRu ? 'Работа' : 'Work'),
           _SettingsTile(
@@ -987,6 +997,12 @@ class ProfilePage extends ConsumerWidget {
             strings.isRu ? 'Поддержка проекта' : 'Support the project',
           ),
           _SettingsTile(
+            icon: Icons.star_rounded,
+            title: strings.rateApp,
+            subtitle: strings.rateAppSubtitle,
+            onTap: () => _showRatingDialog(context, strings, controller, data),
+          ),
+          _SettingsTile(
             icon: Icons.volunteer_activism_outlined,
             title: strings.isRu
                 ? 'Поддержать разработку'
@@ -996,7 +1012,6 @@ class ProfilePage extends ConsumerWidget {
                 : 'BTC, ETH, SOL, and USDT (Solana)',
             onTap: () => _showSupport(context, strings.isRu),
           ),
-          const SizedBox(height: 18),
           const SizedBox(height: 18),
           _SectionTitle(strings.isRu ? 'Данные' : 'Data'),
           _SettingsTile(
@@ -1020,7 +1035,7 @@ class ProfilePage extends ConsumerWidget {
           _SettingsTile(
             icon: Icons.system_update_rounded,
             title: strings.checkUpdates,
-            subtitle: 'Aperture Grafik v0.2.0',
+            subtitle: 'Aperture Grafik v0.3.0',
             onTap: () => _handleCheckUpdates(context, strings),
           ),
         ],
@@ -1034,7 +1049,7 @@ Future<void> _handleCheckUpdates(BuildContext context, Strings strings) async {
   try {
     packageInfo = await PackageInfo.fromPlatform();
   } catch (_) {}
-  final currentVersion = packageInfo?.version ?? '0.2.0';
+  final currentVersion = packageInfo?.version ?? '0.3.0';
 
   if (!context.mounted) return;
   ScaffoldMessenger.of(context).showSnackBar(
@@ -1170,6 +1185,151 @@ Future<void> _handleCheckUpdates(BuildContext context, Strings strings) async {
       );
     }
   }
+}
+
+Future<void> _showRatingDialog(
+  BuildContext context,
+  Strings strings,
+  AppController controller,
+  AppState data,
+) async {
+  int selectedStars = 5;
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    showDragHandle: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+    builder: (modalContext) {
+      return StatefulBuilder(
+        builder: (context, setModalState) {
+          final isHigh = selectedStars >= 4;
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primaryContainer,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.star_rounded,
+                      size: 34,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    strings.rateDialogTitle,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    strings.rateDialogSubtitle,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(5, (starIndex) {
+                      final starNumber = starIndex + 1;
+                      final isFilled = starNumber <= selectedStars;
+                      return IconButton(
+                        iconSize: 42,
+                        icon: Icon(
+                          isFilled ? Icons.star_rounded : Icons.star_outline_rounded,
+                          color: isFilled ? Colors.amber.shade600 : Colors.grey.shade400,
+                        ),
+                        onPressed: () {
+                          setModalState(() {
+                            selectedStars = starNumber;
+                          });
+                        },
+                      );
+                    }),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    isHigh ? strings.ratingHighNotice : strings.ratingLowNotice,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 20),
+                  if (isHigh) ...[
+                    FilledButton.icon(
+                      onPressed: () async {
+                        controller.updateSettings(
+                          data.settings.copyWith(hasRatedProject: true),
+                        );
+                        final uri = Uri.parse('https://github.com/santiyastudio-lgtm/aperture-grafik');
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        }
+                        if (context.mounted) Navigator.pop(context);
+                      },
+                      icon: const Icon(Icons.star_rounded),
+                      label: Text(strings.starOnGitHub),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        controller.updateSettings(
+                          data.settings.copyWith(hasRatedProject: true),
+                        );
+                        final uri = Uri.parse('https://gitlab.com/santiyastudio-lgtm/aperture-grafik');
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        }
+                        if (context.mounted) Navigator.pop(context);
+                      },
+                      icon: const Icon(Icons.code_rounded),
+                      label: Text(strings.starOnGitLab),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                      ),
+                    ),
+                  ] else ...[
+                    FilledButton.icon(
+                      onPressed: () async {
+                        final uri = Uri.parse('https://github.com/santiyastudio-lgtm/aperture-grafik/issues');
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        }
+                        if (context.mounted) Navigator.pop(context);
+                      },
+                      icon: const Icon(Icons.feedback_outlined),
+                      label: Text(strings.feedbackOnGitHub),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
 }
 
 Future<void> showPayoutEditor(

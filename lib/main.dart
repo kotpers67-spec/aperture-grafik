@@ -37,7 +37,7 @@ class _ApertureAppState extends ConsumerState<ApertureApp> {
     ) {
       final data = next.asData?.value;
       if (data != null) {
-        unawaited(NotificationService.instance.scheduleNextEndReminder(data));
+        unawaited(NotificationService.instance.scheduleAll(data));
       }
     }, fireImmediately: true);
   }

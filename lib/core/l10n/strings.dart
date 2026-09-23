@@ -47,4 +47,25 @@ class Strings {
   String get updateFailed => isRu ? 'Не удалось загрузить обновление' : 'Failed to download update';
   String get newVersion => isRu ? 'Новая версия' : 'New version';
   String get currentVersion => isRu ? 'Текущая версия' : 'Current version';
+  String get payoutNotifications => isRu ? 'Напоминания о выплатах' : 'Payout reminders';
+  String get payoutNotificationsSubtitle => isRu
+      ? 'В день аванса и ЗП в 10:00 и накануне в 18:00'
+      : 'On advance & salary day at 10:00 and the day before at 18:00';
+  String get rateApp => isRu ? 'Оценить проект' : 'Rate the project';
+  String get rateAppSubtitle => isRu
+      ? 'Поставить звезду на GitHub или GitLab ⭐'
+      : 'Star on GitHub or GitLab ⭐';
+  String get rateDialogTitle => isRu ? 'Оцените Aperture Grafik' : 'Rate Aperture Grafik';
+  String get rateDialogSubtitle => isRu
+      ? 'Ваша оценка и звёзды в репозиториях помогают развивать проект!'
+      : 'Your rating and stars in repositories help improve the project!';
+  String get starOnGitHub => isRu ? 'Поставить ⭐ на GitHub' : 'Star ⭐ on GitHub';
+  String get starOnGitLab => isRu ? 'Поставить ⭐ на GitLab' : 'Star ⭐ on GitLab';
+  String get feedbackOnGitHub => isRu ? 'Предложить идею / багрепорт' : 'Suggest feature / bug report';
+  String get ratingHighNotice => isRu
+      ? 'Спасибо за высокую оценку! Поддержите проект звёздочкой в репозитории:'
+      : 'Thank you for the high rating! Support the project with a star:';
+  String get ratingLowNotice => isRu
+      ? 'Спасибо за честность! Расскажите, чего не хватает или напишите нам:'
+      : 'Thank you for your honesty! Let us know what to improve:';
 }

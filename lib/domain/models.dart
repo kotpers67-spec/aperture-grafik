@@ -48,6 +48,8 @@ class AppSettings {
     required this.themeMode,
     required this.onboardingComplete,
     required this.notificationsEnabled,
+    this.payoutNotificationsEnabled = true,
+    this.hasRatedProject = false,
   });
 
   final AppLanguage language;
@@ -55,6 +57,8 @@ class AppSettings {
   final AppThemeMode themeMode;
   final bool onboardingComplete;
   final bool notificationsEnabled;
+  final bool payoutNotificationsEnabled;
+  final bool hasRatedProject;
 
   AppSettings copyWith({
     AppLanguage? language,
@@ -62,12 +66,17 @@ class AppSettings {
     AppThemeMode? themeMode,
     bool? onboardingComplete,
     bool? notificationsEnabled,
+    bool? payoutNotificationsEnabled,
+    bool? hasRatedProject,
   }) => AppSettings(
     language: language ?? this.language,
     currency: currency ?? this.currency,
     themeMode: themeMode ?? this.themeMode,
     onboardingComplete: onboardingComplete ?? this.onboardingComplete,
     notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
+    payoutNotificationsEnabled:
+        payoutNotificationsEnabled ?? this.payoutNotificationsEnabled,
+    hasRatedProject: hasRatedProject ?? this.hasRatedProject,
   );
 
   Map<String, dynamic> toJson() => {
@@ -76,6 +85,8 @@ class AppSettings {
     'themeMode': themeMode.name,
     'onboardingComplete': onboardingComplete,
     'notificationsEnabled': notificationsEnabled,
+    'payoutNotificationsEnabled': payoutNotificationsEnabled,
+    'hasRatedProject': hasRatedProject,
   };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) => AppSettings(
@@ -92,6 +103,9 @@ class AppSettings {
     ),
     onboardingComplete: json['onboardingComplete'] as bool? ?? false,
     notificationsEnabled: json['notificationsEnabled'] as bool? ?? true,
+    payoutNotificationsEnabled:
+        json['payoutNotificationsEnabled'] as bool? ?? true,
+    hasRatedProject: json['hasRatedProject'] as bool? ?? false,
   );
 }
 
