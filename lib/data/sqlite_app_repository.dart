@@ -15,9 +15,14 @@ class SqliteAppRepository implements AppRepository {
       return openDatabase(
         path.join(directory, 'aperture_grafik.db'),
         version: 1,
-        onCreate: (db, _) => db.execute(
-          'CREATE TABLE app_state (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)',
-        ),
+        onCreate: (db, _) async {
+          await db.execute(
+            'CREATE TABLE app_state (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)',
+          );
+          await db.execute(
+            'CREATE TABLE IF NOT EXISTS app_state_quarantine (id INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL, saved_at TEXT NOT NULL, error TEXT)',
+          );
+        },
       );
     }();
     return _dbFuture!;
@@ -25,28 +30,44 @@ class SqliteAppRepository implements AppRepository {
 
   @override
   Future<AppState> load() async {
-    final rows = await (await _db).query(
+    final db = await _db;
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS app_state_quarantine (id INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL, saved_at TEXT NOT NULL, error TEXT)',
+    );
+    final rows = await db.query(
       'app_state',
       where: 'id = ?',
       whereArgs: [1],
     );
     if (rows.isEmpty) return AppState.initial();
+    final raw = rows.single['payload']! as String;
     try {
       return AppState.fromJson(
-        jsonDecode(rows.single['payload']! as String) as Map<String, dynamic>,
+        jsonDecode(raw) as Map<String, dynamic>,
       );
     } catch (error) {
-      // Return initial state only if payload is missing or unparseable, but do not clear DB automatically
+      // Quarantine corrupted payload to prevent silent permanent destruction
+      try {
+        await db.insert('app_state_quarantine', {
+          'payload': raw,
+          'saved_at': DateTime.now().toIso8601String(),
+          'error': error.toString(),
+        });
+      } catch (_) {}
       return AppState.initial();
     }
   }
 
   @override
   Future<void> save(AppState state) async {
-    await (await _db).insert('app_state', {
-      'id': 1,
-      'payload': jsonEncode(state.toJson()),
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    final db = await _db;
+    final payload = jsonEncode(state.toJson());
+    await db.transaction((txn) async {
+      await txn.insert('app_state', {
+        'id': 1,
+        'payload': payload,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    });
   }
 
   @override

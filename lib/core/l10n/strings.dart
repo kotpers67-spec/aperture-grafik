@@ -30,4 +30,12 @@ class Strings {
   String get noPayoutsYet => isRu ? 'Выплат пока не внесено' : 'No payouts recorded yet';
   String get advanceDayLabel => isRu ? 'День аванса' : 'Advance day';
   String get salaryDayLabel => isRu ? 'День зарплаты' : 'Salary day';
+  String get additional => isRu ? 'Дополнительно' : 'Additional';
+  String get customPercentLabel => isRu ? 'Коэффициент дня (%)' : 'Day coefficient (%)';
+  String get customDailyRateLabel => isRu ? 'Ставка за этот день (₽)' : 'Day rate (₽)';
+  String get manualEarningsLabel => isRu ? 'Любая сумма за этот день (₽)' : 'Any amount for this day (₽)';
+  String get revenueRequiredForPercentNotice => isRu
+      ? 'Для коэффициента обязательно укажите выручку'
+      : 'Revenue is required for the coefficient';
+  String get shiftTotalEarnings => isRu ? 'Итого за этот день' : 'Total for this day';
 }

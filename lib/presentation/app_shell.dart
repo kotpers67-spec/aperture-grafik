@@ -441,25 +441,34 @@ class HomePage extends ConsumerWidget {
       shifts: data.shifts,
       targetDate: today,
     );
-    final active =
-        planned &&
-        now.isAfter(starts) &&
-        now.isBefore(ends) &&
-        existing == null;
     final yesterday = today.subtract(const Duration(days: 1));
     final yesterdayShift = data.shifts
         .where((shift) => _sameDay(shift.date, yesterday))
         .firstOrNull;
+    final yesterdayStart = schedule.startAt(data.schedule, yesterday);
     final yesterdayEnd = schedule.endAt(data.schedule, yesterday);
+    final isYesterdayOvernightActive =
+        schedule.isWorkDay(data.schedule, yesterday) &&
+            yesterdayEnd.day != yesterday.day &&
+            now.isAfter(yesterdayStart) &&
+            now.isBefore(yesterdayEnd) &&
+            yesterdayShift == null;
+    final active = (planned &&
+            now.isAfter(starts) &&
+            now.isBefore(ends) &&
+            existing == null) ||
+        isYesterdayOvernightActive;
     final pendingDay = planned && now.isAfter(ends) && existing == null
         ? today
         : (schedule.isWorkDay(data.schedule, yesterday) &&
-                  yesterdayEnd.day != yesterday.day &&
-                  now.isAfter(yesterdayEnd) &&
-                  yesterdayShift == null
-              ? yesterday
-              : null);
-    final completionDate = planned && existing == null ? today : pendingDay;
+                yesterdayEnd.day != yesterday.day &&
+                now.isAfter(yesterdayEnd) &&
+                yesterdayShift == null
+            ? yesterday
+            : null);
+    final completionDate = isYesterdayOvernightActive
+        ? yesterday
+        : (planned && existing == null ? today : pendingDay);
     return _PageScaffold(
       title: strings.home,
       child: ListView(
@@ -653,11 +662,16 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                 ),
                 icon: const Icon(Icons.chevron_left),
               ),
-              Text(
-                DateFormat.yMMMM(
-                  strings.isRu ? 'ru_RU' : 'en_US',
-                ).format(month),
-                style: Theme.of(context).textTheme.titleLarge,
+              Expanded(
+                child: Text(
+                  DateFormat.yMMMM(
+                    strings.isRu ? 'ru_RU' : 'en_US',
+                  ).format(month),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
               ),
               IconButton(
                 onPressed: () => setState(
@@ -764,8 +778,15 @@ class _StatisticsPageState extends ConsumerState<StatisticsPage> {
     );
     final points = <int, int>{};
     for (final shift in shifts) {
+      final int key = switch (range) {
+        0 => shift.date
+            .difference(DateTime(from.year, from.month, from.day))
+            .inDays,
+        1 => shift.date.day,
+        _ => shift.date.month,
+      };
       points.update(
-        shift.date.day,
+        key,
         (value) => value + shift.earningsMinor,
         ifAbsent: () => shift.earningsMinor,
       );
@@ -1556,6 +1577,16 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
   late final TextEditingController comment = TextEditingController(
     text: widget.existing?.comment ?? '',
   );
+  late final TextEditingController customPercent = TextEditingController(
+    text: widget.existing?.customRevenuePercent != null
+        ? widget.existing!.customRevenuePercent.toString()
+        : '',
+  );
+  late final TextEditingController customDailyRate = TextEditingController(
+    text: widget.existing?.customDailyRateMinor != null
+        ? (widget.existing!.customDailyRateMinor! / 100).toStringAsFixed(2)
+        : '',
+  );
   late DateTime start =
       widget.existing?.actualStart ??
       const ScheduleService().startAt(widget.data.schedule, widget.date);
@@ -1565,9 +1596,26 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
   late Set<String> people = widget.existing?.colleagueIds.toSet() ?? <String>{};
 
   @override
+  void initState() {
+    super.initState();
+    revenue.addListener(_onFieldChanged);
+    customPercent.addListener(_onFieldChanged);
+    customDailyRate.addListener(_onFieldChanged);
+  }
+
+  void _onFieldChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    revenue.removeListener(_onFieldChanged);
+    customPercent.removeListener(_onFieldChanged);
+    customDailyRate.removeListener(_onFieldChanged);
     revenue.dispose();
     comment.dispose();
+    customPercent.dispose();
+    customDailyRate.dispose();
     super.dispose();
   }
 
@@ -1598,6 +1646,26 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
   @override
   Widget build(BuildContext context) {
     final strings = Strings(widget.data.settings.language);
+
+    final parsedRevenue =
+        ((num.tryParse(revenue.text.replaceAll(',', '.')) ?? 0) * 100).round();
+    final parsedCustomPercent =
+        num.tryParse(customPercent.text.replaceAll(',', '.'))?.toDouble();
+    final parsedCustomRate = customDailyRate.text.trim().isEmpty
+        ? null
+        : ((num.tryParse(customDailyRate.text.replaceAll(',', '.')) ?? 0) * 100)
+            .round();
+
+    final liveEarningsMinor = const FinanceService().earnings(
+      revenueMinor: parsedRevenue,
+      payment: widget.data.payment,
+      customRevenuePercent: parsedCustomPercent,
+      customDailyRateMinor: parsedCustomRate,
+    );
+
+    final showRevenueWarning =
+        parsedCustomPercent != null && parsedCustomPercent > 0 && parsedRevenue <= 0;
+
     return Padding(
       padding: EdgeInsets.fromLTRB(
         20,
@@ -1681,12 +1749,151 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
                   : 'Comment (optional)',
             ),
           ),
+          const SizedBox(height: 12),
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              initiallyExpanded: false,
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: const EdgeInsets.only(top: 8, bottom: 8),
+              leading: const Icon(Icons.tune_rounded),
+              title: Text(
+                strings.additional,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              children: [
+                TextField(
+                  controller: customPercent,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: strings.customPercentLabel,
+                    prefixIcon: const Icon(Icons.percent_rounded),
+                    suffixText: '%',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: customDailyRate,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: strings.customDailyRateLabel,
+                    prefixIcon: const Icon(Icons.payments_outlined),
+                    suffixText: '₽',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (showRevenueWarning) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Theme.of(context)
+                    .colorScheme
+                    .errorContainer
+                    .withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    color: Theme.of(context).colorScheme.onErrorContainer,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      strings.revenueRequiredForPercentNotice,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onErrorContainer,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Theme.of(context)
+                  .colorScheme
+                  .surfaceContainerHighest
+                  .withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Theme.of(context)
+                    .colorScheme
+                    .outlineVariant
+                    .withValues(alpha: 0.5),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.calculate_outlined,
+                  color: Theme.of(context).colorScheme.primary,
+                  size: 28,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        strings.shiftTotalEarnings,
+                        style:
+                            Theme.of(context).textTheme.labelMedium?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                      ),
+                      Text(
+                        '${(liveEarningsMinor / 100).toStringAsFixed(0)} ₽',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 20),
           FilledButton(
             onPressed: () async {
               final amount =
                   ((num.tryParse(revenue.text.replaceAll(',', '.')) ?? 0) * 100)
                       .round();
+              final percent = num.tryParse(
+                      customPercent.text.replaceAll(',', '.'))
+                  ?.toDouble();
+              final rate = customDailyRate.text.trim().isEmpty
+                  ? null
+                  : ((num.tryParse(
+                              customDailyRate.text.replaceAll(',', '.')) ??
+                          0) *
+                      100)
+                      .round();
+
+              if (percent != null && percent > 0 && amount <= 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(strings.revenueRequiredForPercentNotice),
+                  ),
+                );
+              }
+
               await ref
                   .read(appControllerProvider.notifier)
                   .saveShift(
@@ -1698,6 +1905,8 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
                     colleagueIds: people.toList(),
                     revenueMinor: amount,
                     comment: comment.text,
+                    customRevenuePercent: percent,
+                    customDailyRateMinor: rate,
                   );
               if (context.mounted) Navigator.pop(context);
             },
@@ -1960,6 +2169,8 @@ class _InlineShiftCompletionFormState
     extends ConsumerState<_InlineShiftCompletionForm> {
   late final TextEditingController _revenue = TextEditingController();
   late final TextEditingController _comment = TextEditingController();
+  late final TextEditingController _customPercent = TextEditingController();
+  late final TextEditingController _customDailyRate = TextEditingController();
   late DateTime _start = const ScheduleService().startAt(
     widget.data.schedule,
     widget.date,
@@ -1971,9 +2182,26 @@ class _InlineShiftCompletionFormState
   final Set<String> _colleagueIds = <String>{};
 
   @override
+  void initState() {
+    super.initState();
+    _revenue.addListener(_onFieldChanged);
+    _customPercent.addListener(_onFieldChanged);
+    _customDailyRate.addListener(_onFieldChanged);
+  }
+
+  void _onFieldChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    _revenue.removeListener(_onFieldChanged);
+    _customPercent.removeListener(_onFieldChanged);
+    _customDailyRate.removeListener(_onFieldChanged);
     _revenue.dispose();
     _comment.dispose();
+    _customPercent.dispose();
+    _customDailyRate.dispose();
     super.dispose();
   }
 
@@ -2003,6 +2231,25 @@ class _InlineShiftCompletionFormState
   Future<void> _save() async {
     final revenueMinor =
         ((num.tryParse(_revenue.text.replaceAll(',', '.')) ?? 0) * 100).round();
+    final percent =
+        num.tryParse(_customPercent.text.replaceAll(',', '.'))?.toDouble();
+    final rate = _customDailyRate.text.trim().isEmpty
+        ? null
+        : ((num.tryParse(_customDailyRate.text.replaceAll(',', '.')) ?? 0) *
+                100)
+            .round();
+
+    if (percent != null && percent > 0 && revenueMinor <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            Strings(widget.data.settings.language)
+                .revenueRequiredForPercentNotice,
+          ),
+        ),
+      );
+    }
+
     await ref
         .read(appControllerProvider.notifier)
         .saveShift(
@@ -2013,12 +2260,35 @@ class _InlineShiftCompletionFormState
           colleagueIds: _colleagueIds.toList(),
           revenueMinor: revenueMinor,
           comment: _comment.text,
+          customRevenuePercent: percent,
+          customDailyRateMinor: rate,
         );
   }
 
   @override
   Widget build(BuildContext context) {
     final strings = Strings(widget.data.settings.language);
+
+    final parsedRevenue =
+        ((num.tryParse(_revenue.text.replaceAll(',', '.')) ?? 0) * 100).round();
+    final parsedCustomPercent =
+        num.tryParse(_customPercent.text.replaceAll(',', '.'))?.toDouble();
+    final parsedCustomRate = _customDailyRate.text.trim().isEmpty
+        ? null
+        : ((num.tryParse(_customDailyRate.text.replaceAll(',', '.')) ?? 0) *
+                100)
+            .round();
+
+    final liveEarningsMinor = const FinanceService().earnings(
+      revenueMinor: parsedRevenue,
+      payment: widget.data.payment,
+      customRevenuePercent: parsedCustomPercent,
+      customDailyRateMinor: parsedCustomRate,
+    );
+
+    final showRevenueWarning =
+        parsedCustomPercent != null && parsedCustomPercent > 0 && parsedRevenue <= 0;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -2126,6 +2396,131 @@ class _InlineShiftCompletionFormState
                 labelText: strings.isRu
                     ? 'Комментарий (необязательно)'
                     : 'Comment (optional)',
+              ),
+            ),
+            const SizedBox(height: 12),
+            Theme(
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                initiallyExpanded: false,
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: const EdgeInsets.only(top: 8, bottom: 8),
+                leading: const Icon(Icons.tune_rounded),
+                title: Text(
+                  strings.additional,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                children: [
+                  TextField(
+                    controller: _customPercent,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      labelText: strings.customPercentLabel,
+                      prefixIcon: const Icon(Icons.percent_rounded),
+                      suffixText: '%',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _customDailyRate,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      labelText: strings.customDailyRateLabel,
+                      prefixIcon: const Icon(Icons.payments_outlined),
+                      suffixText: '₽',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (showRevenueWarning) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .errorContainer
+                      .withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline_rounded,
+                      color: Theme.of(context).colorScheme.onErrorContainer,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        strings.revenueRequiredForPercentNotice,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onErrorContainer,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: Theme.of(context)
+                    .colorScheme
+                    .surfaceContainerHighest
+                    .withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .outlineVariant
+                      .withValues(alpha: 0.5),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.calculate_outlined,
+                    color: Theme.of(context).colorScheme.primary,
+                    size: 28,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          strings.shiftTotalEarnings,
+                          style:
+                              Theme.of(context).textTheme.labelMedium?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                        ),
+                        Text(
+                          '${(liveEarningsMinor / 100).toStringAsFixed(0)} ₽',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleLarge
+                              ?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 20),
@@ -3132,6 +3527,7 @@ Future<void> _manageColleagues(
   await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
+    useSafeArea: true,
     builder: (context) => Padding(
       padding: EdgeInsets.fromLTRB(
         20,
@@ -3261,7 +3657,8 @@ Future<void> _import(
     withData: true,
   );
   if (!context.mounted) return;
-  if (picked == null || picked.files.single.bytes == null) return;
+  if (picked == null || picked.files.isEmpty || picked.files.first.bytes == null) return;
+  final bytes = picked.files.first.bytes!;
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
@@ -3286,7 +3683,7 @@ Future<void> _import(
   if (confirmed != true) return;
   try {
     await controller.importBackup(
-      utf8.decode(picked.files.single.bytes!),
+      utf8.decode(bytes),
     );
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -3295,7 +3692,7 @@ Future<void> _import(
         ),
       );
     }
-  } on FormatException {
+  } catch (_) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

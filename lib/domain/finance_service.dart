@@ -21,9 +21,20 @@ class PayoutStatus {
 class FinanceService {
   const FinanceService();
 
-  int earnings({required int revenueMinor, required PaymentSettings payment}) =>
-      payment.dailyRateMinor +
-      (revenueMinor * payment.revenuePercent / 100).round();
+  int earnings({
+    required int revenueMinor,
+    required PaymentSettings payment,
+    double? customRevenuePercent,
+    int? customDailyRateMinor,
+    int? manualEarningsMinor,
+  }) {
+    if (manualEarningsMinor != null) {
+      return manualEarningsMinor;
+    }
+    final rate = customDailyRateMinor ?? payment.dailyRateMinor;
+    final percent = customRevenuePercent ?? payment.revenuePercent;
+    return rate + (revenueMinor * percent / 100).round();
+  }
 
   DateTime _resolveDate(int year, int month, int targetDay) {
     final maxDay = DateTime(year, month + 1, 0).day;

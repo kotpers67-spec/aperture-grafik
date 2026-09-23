@@ -38,11 +38,12 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
   AppState get _data => state.requireValue;
 
   Future<void> _save(AppState value) async {
+    final previousState = state;
     state = AsyncValue.data(value);
     try {
       await _repository.save(value);
-    } catch (error, stackTrace) {
-      state = AsyncValue.error(error, stackTrace);
+    } catch (_) {
+      state = previousState;
     }
   }
 
@@ -143,6 +144,9 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
     required List<String> colleagueIds,
     required int revenueMinor,
     required String comment,
+    double? customRevenuePercent,
+    int? customDailyRateMinor,
+    int? manualEarningsMinor,
   }) async {
     final now = DateTime.now();
     final shift = Shift(
@@ -156,8 +160,14 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
       earningsMinor: _finance.earnings(
         revenueMinor: revenueMinor,
         payment: _data.payment,
+        customRevenuePercent: customRevenuePercent,
+        customDailyRateMinor: customDailyRateMinor,
+        manualEarningsMinor: manualEarningsMinor,
       ),
       comment: comment.trim(),
+      customRevenuePercent: customRevenuePercent,
+      customDailyRateMinor: customDailyRateMinor,
+      manualEarningsMinor: manualEarningsMinor,
       createdAt: id == null
           ? now
           : _data.shifts

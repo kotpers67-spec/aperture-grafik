@@ -12,6 +12,16 @@ enum ShiftKind { scheduled, extra }
 
 enum PayoutKind { advance, salary }
 
+extension SafeEnumByName<T extends Enum> on Iterable<T> {
+  T byNameOr(String? name, T fallback) {
+    if (name == null) return fallback;
+    for (final value in this) {
+      if (value.name == name) return value;
+    }
+    return fallback;
+  }
+}
+
 class WorkTime {
   const WorkTime(this.hour, this.minute);
 
@@ -69,14 +79,16 @@ class AppSettings {
   };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) => AppSettings(
-    language: AppLanguage.values.byName(
-      json['language'] as String? ?? 'russian',
+    language: AppLanguage.values.byNameOr(
+      json['language'] as String?,
+      AppLanguage.russian,
     ),
     // Backups created before RUB-only mode may contain "usd". Keep them
     // readable while normalising all monetary values to the supported currency.
     currency: Currency.rub,
-    themeMode: AppThemeMode.values.byName(
-      json['themeMode'] as String? ?? 'standard',
+    themeMode: AppThemeMode.values.byNameOr(
+      json['themeMode'] as String?,
+      AppThemeMode.standard,
     ),
     onboardingComplete: json['onboardingComplete'] as bool? ?? false,
     notificationsEnabled: json['notificationsEnabled'] as bool? ?? true,
@@ -121,7 +133,7 @@ class Schedule {
   };
 
   factory Schedule.fromJson(Map<String, dynamic> json) => Schedule(
-    type: ScheduleType.values.byName(json['type'] as String? ?? 'twoTwo'),
+    type: ScheduleType.values.byNameOr(json['type'] as String?, ScheduleType.twoTwo),
     anchorDate:
         DateTime.tryParse(json['anchorDate'] as String? ?? '') ??
         DateTime.now(),
@@ -232,6 +244,9 @@ class Shift {
     required this.comment,
     required this.createdAt,
     required this.updatedAt,
+    this.customRevenuePercent,
+    this.customDailyRateMinor,
+    this.manualEarningsMinor,
   });
 
   final String id;
@@ -245,6 +260,9 @@ class Shift {
   final String comment;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final double? customRevenuePercent;
+  final int? customDailyRateMinor;
+  final int? manualEarningsMinor;
 
   Shift copyWith({
     DateTime? date,
@@ -256,6 +274,9 @@ class Shift {
     int? earningsMinor,
     String? comment,
     DateTime? updatedAt,
+    double? customRevenuePercent,
+    int? customDailyRateMinor,
+    int? manualEarningsMinor,
   }) => Shift(
     id: id,
     date: date ?? this.date,
@@ -268,6 +289,12 @@ class Shift {
     comment: comment ?? this.comment,
     createdAt: createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
+    customRevenuePercent:
+        customRevenuePercent ?? this.customRevenuePercent,
+    customDailyRateMinor:
+        customDailyRateMinor ?? this.customDailyRateMinor,
+    manualEarningsMinor:
+        manualEarningsMinor ?? this.manualEarningsMinor,
   );
 
   Map<String, dynamic> toJson() => {
@@ -282,12 +309,18 @@ class Shift {
     'comment': comment,
     'createdAt': createdAt.toIso8601String(),
     'updatedAt': updatedAt.toIso8601String(),
+    if (customRevenuePercent != null)
+      'customRevenuePercent': customRevenuePercent,
+    if (customDailyRateMinor != null)
+      'customDailyRateMinor': customDailyRateMinor,
+    if (manualEarningsMinor != null)
+      'manualEarningsMinor': manualEarningsMinor,
   };
 
   factory Shift.fromJson(Map<String, dynamic> json) => Shift(
     id: json['id'] as String,
     date: DateTime.parse(json['date'] as String),
-    kind: ShiftKind.values.byName(json['kind'] as String? ?? 'scheduled'),
+    kind: ShiftKind.values.byNameOr(json['kind'] as String?, ShiftKind.scheduled),
     actualStart: DateTime.parse(json['actualStart'] as String),
     actualEnd: DateTime.parse(json['actualEnd'] as String),
     colleagueIds: List<String>.from(
@@ -298,6 +331,12 @@ class Shift {
     comment: json['comment'] as String? ?? '',
     createdAt: DateTime.parse(json['createdAt'] as String),
     updatedAt: DateTime.parse(json['updatedAt'] as String),
+    customRevenuePercent:
+        (json['customRevenuePercent'] as num?)?.toDouble(),
+    customDailyRateMinor:
+        (json['customDailyRateMinor'] as num?)?.toInt(),
+    manualEarningsMinor:
+        (json['manualEarningsMinor'] as num?)?.toInt(),
   );
 }
 
@@ -349,7 +388,7 @@ class Payout {
   factory Payout.fromJson(Map<String, dynamic> json) => Payout(
     id: json['id'] as String,
     date: DateTime.parse(json['date'] as String),
-    kind: PayoutKind.values.byName(json['kind'] as String? ?? 'advance'),
+    kind: PayoutKind.values.byNameOr(json['kind'] as String?, PayoutKind.advance),
     amountMinor: (json['amountMinor'] as num?)?.toInt() ?? 0,
     comment: json['comment'] as String? ?? '',
     createdAt: DateTime.parse(json['createdAt'] as String),

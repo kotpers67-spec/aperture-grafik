@@ -40,6 +40,46 @@ void main() {
     expect(service.earnings(revenueMinor: 5000000, payment: payment), 550000);
   });
 
+  test('earnings respect custom daily rate and custom revenue percent', () {
+    const service = FinanceService();
+    const payment = PaymentSettings(
+      dailyRateMinor: 300000,
+      revenuePercent: 5,
+      advanceDay: 15,
+      salaryDay: 30,
+    );
+    // Custom 10% percent and custom 4000 rate: 400000 + 500000 = 900000
+    expect(
+      service.earnings(
+        revenueMinor: 5000000,
+        payment: payment,
+        customDailyRateMinor: 400000,
+        customRevenuePercent: 10,
+      ),
+      900000,
+    );
+  });
+
+  test('manual earnings override has highest priority over rate and percent', () {
+    const service = FinanceService();
+    const payment = PaymentSettings(
+      dailyRateMinor: 300000,
+      revenuePercent: 5,
+      advanceDay: 15,
+      salaryDay: 30,
+    );
+    expect(
+      service.earnings(
+        revenueMinor: 5000000,
+        payment: payment,
+        customDailyRateMinor: 400000,
+        customRevenuePercent: 10,
+        manualEarningsMinor: 777000,
+      ),
+      777000,
+    );
+  });
+
   test(
     'Russian and English date symbols are available before rendering',
     () async {
