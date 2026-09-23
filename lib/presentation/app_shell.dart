@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -17,6 +18,7 @@ import '../domain/finance_service.dart';
 import '../domain/models.dart';
 import '../domain/revenue_recommendation_service.dart';
 import '../domain/schedule_service.dart';
+import '../domain/update_service.dart';
 
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
@@ -995,6 +997,7 @@ class ProfilePage extends ConsumerWidget {
             onTap: () => _showSupport(context, strings.isRu),
           ),
           const SizedBox(height: 18),
+          const SizedBox(height: 18),
           _SectionTitle(strings.isRu ? 'Данные' : 'Data'),
           _SettingsTile(
             icon: Icons.upload_file_outlined,
@@ -1012,9 +1015,160 @@ class ProfilePage extends ConsumerWidget {
                 : 'Replaces all local data',
             onTap: () => _import(context, controller, strings.isRu),
           ),
+          const SizedBox(height: 18),
+          _SectionTitle(strings.isRu ? 'О приложении' : 'About'),
+          _SettingsTile(
+            icon: Icons.system_update_rounded,
+            title: strings.checkUpdates,
+            subtitle: 'Aperture Grafik v0.2.0',
+            onTap: () => _handleCheckUpdates(context, strings),
+          ),
         ],
       ),
     );
+  }
+}
+
+Future<void> _handleCheckUpdates(BuildContext context, Strings strings) async {
+  PackageInfo? packageInfo;
+  try {
+    packageInfo = await PackageInfo.fromPlatform();
+  } catch (_) {}
+  final currentVersion = packageInfo?.version ?? '0.2.0';
+
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Row(
+        children: [
+          const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Text(strings.checkingUpdates)),
+        ],
+      ),
+      duration: const Duration(seconds: 4),
+    ),
+  );
+
+  const updateService = UpdateService();
+  AppReleaseInfo? release;
+  try {
+    release = await updateService.checkForUpdates(currentVersion: currentVersion);
+  } catch (_) {}
+
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+  if (release == null || !release.isNewer) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${strings.appUpToDate} (v$currentVersion)'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    return;
+  }
+
+  final proceed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Row(
+        children: [
+          Icon(Icons.system_update_rounded, color: Theme.of(dialogContext).colorScheme.primary),
+          const SizedBox(width: 10),
+          Expanded(child: Text('${strings.updateAvailable} ${release!.tag}')),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${strings.currentVersion}: v$currentVersion\n${strings.newVersion}: ${release.version}${release.displaySize.isNotEmpty ? ' (${release.displaySize})' : ''}',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            if (release.notes.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              const Divider(),
+              const SizedBox(height: 6),
+              Text(
+                release.notes,
+                style: Theme.of(dialogContext).textTheme.bodyMedium,
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: Text(strings.cancel),
+        ),
+        FilledButton.icon(
+          onPressed: () => Navigator.pop(dialogContext, true),
+          icon: const Icon(Icons.download_rounded, size: 18),
+          label: Text(strings.downloadAndInstall),
+        ),
+      ],
+    ),
+  );
+
+  if (proceed != true || !context.mounted) return;
+
+  final progressNotifier = ValueNotifier<double>(0.0);
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (progressContext) => PopScope(
+      canPop: false,
+      child: AlertDialog(
+        title: Text(strings.downloadingUpdate),
+        content: ValueListenableBuilder<double>(
+          valueListenable: progressNotifier,
+          builder: (context, value, _) {
+            final percent = value >= 0 ? (value * 100).toInt() : null;
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                LinearProgressIndicator(value: value >= 0 ? value : null),
+                const SizedBox(height: 12),
+                Text(percent != null ? '$percent%' : strings.downloadingUpdate),
+              ],
+            );
+          },
+        ),
+      ),
+    ),
+  );
+
+  try {
+    final targetPath = await updateService.getLocalApkPath();
+    await for (final progress in updateService.downloadApk(
+      downloadUrl: release.downloadUrl,
+      targetPath: targetPath,
+    )) {
+      progressNotifier.value = progress;
+    }
+
+    if (context.mounted) {
+      Navigator.pop(context);
+      await updateService.installApk(targetPath);
+    }
+  } catch (e) {
+    if (context.mounted) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${strings.updateFailed}: $e'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
   }
 }
 

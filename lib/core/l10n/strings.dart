@@ -38,4 +38,13 @@ class Strings {
       ? 'Для коэффициента обязательно укажите выручку'
       : 'Revenue is required for the coefficient';
   String get shiftTotalEarnings => isRu ? 'Итого за этот день' : 'Total for this day';
+  String get checkUpdates => isRu ? 'Проверить обновления' : 'Check for updates';
+  String get checkingUpdates => isRu ? 'Проверка обновлений...' : 'Checking for updates...';
+  String get updateAvailable => isRu ? 'Доступно обновление' : 'Update available';
+  String get appUpToDate => isRu ? 'У вас установлена последняя версия' : 'App is up to date';
+  String get downloadAndInstall => isRu ? 'Скачать и обновить' : 'Download & update';
+  String get downloadingUpdate => isRu ? 'Загрузка обновления...' : 'Downloading update...';
+  String get updateFailed => isRu ? 'Не удалось загрузить обновление' : 'Failed to download update';
+  String get newVersion => isRu ? 'Новая версия' : 'New version';
+  String get currentVersion => isRu ? 'Текущая версия' : 'Current version';
 }
