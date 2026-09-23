@@ -50,7 +50,7 @@ class _AppShellState extends ConsumerState<AppShell> {
       try {
         packageInfo = await PackageInfo.fromPlatform();
       } catch (_) {}
-      final currentVersion = packageInfo?.version ?? '0.3.0';
+      final currentVersion = packageInfo?.version ?? '0.3.1';
 
       const updateService = UpdateService();
       final release = await updateService.checkForUpdates(currentVersion: currentVersion);

@@ -65,3 +65,34 @@ Verify SQLite transactions, quarantine table creation, and safe enum parsing fal
 - [ ] Automated test suite runs with 100% pass rate (`flutter test`)
 - [ ] Static analyzer reports 0 issues (`flutter analyze`)
 - [ ] Comprehensive verification re-audit report published confirming resolution of prior findings
+
+## 2026-09-23T17:20:42Z
+
+Deploy and verify the v0.3.1 release of Aperture Grafik across GitLab Generic Packages, GitLab Releases, GitHub Releases, and local desktop APK distribution.
+
+Working directory: F:\Projects\aperture-grafik
+Integrity mode: development
+
+## Requirements
+
+### R1. Production Release Build & Version Bump (v0.3.1+4)
+Build the standalone release APK using JDK 17 ($env:JAVA_HOME = "F:\Development\jdk-17") and verify zero compiler warnings, static analysis clean (`flutter analyze`), and all unit tests passing (`flutter test`).
+
+### R2. GitLab & GitHub Release Deployment
+- Upload the built `aperture-grafik.apk` binary to GitLab Generic Package Registry (`santiyastudio/aperture-grafik/packages/generic/aperture-grafik/0.3.1/aperture-grafik.apk`) using token `glpat-dt78DIIIIfmrarGxYWJRbmM6MQpvOjEKdTpwYmd0eg8.01.170b6enh9`.
+- Create the GitLab Release `v0.3.1` with the package asset link attached.
+- Tag and publish GitHub Release `v0.3.1` (`santiyastudio-lgtm/aperture-grafik`) with the APK attached via `gh release create`.
+- Push git commit and tags `v0.3.1` to both `gitlab` and `origin` remotes.
+
+### R3. Desktop Distribution & In-App Auto-Update Verification
+- Copy the release APK to `C:\Users\kotpe\OneDrive\Desktop\aperture-grafik.apk`.
+- Verify that previous versions (v0.2.0, v0.3.0) detect the v0.3.1 release via GitLab/GitHub API, stream the APK with background progress/ETA notifications, and trigger system APK installation without 404 errors.
+
+## Acceptance Criteria
+
+### Build & Verification
+- [ ] `flutter analyze` reports 0 issues
+- [ ] `flutter test` reports 100% pass rate
+- [ ] Release APK compiled and verified at `C:\Users\kotpe\OneDrive\Desktop\aperture-grafik.apk`
+- [ ] GitLab Release `v0.3.1` created and downloadable via public URL
+- [ ] GitHub Release `v0.3.1` published with asset
