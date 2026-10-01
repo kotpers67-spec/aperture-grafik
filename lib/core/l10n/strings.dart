@@ -68,4 +68,9 @@ class Strings {
   String get ratingLowNotice => isRu
       ? 'Спасибо за честность! Расскажите, чего не хватает или напишите нам:'
       : 'Thank you for your honesty! Let us know what to improve:';
+  String get workedHours => isRu ? 'Отработано часов' : 'Hours worked';
+  String hoursLabel(double h) {
+    final rounded = h.toStringAsFixed(1);
+    return isRu ? '$rounded ч' : '${rounded}h';
+  }
 }

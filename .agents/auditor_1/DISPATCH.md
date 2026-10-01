@@ -1,47 +1,42 @@
-# Forensic Integrity Auditor Dispatch
+# Task Assignment: Forensic Integrity Audit of v0.3.1 Release
 
-Target Codebase: F:\Projects\aperture-grafik
-Working Directory: F:\Projects\aperture-grafik\.agents\auditor_1
-Original Request: F:\Projects\aperture-grafik\ORIGINAL_REQUEST.md
-Prior Report: F:\Projects\aperture-grafik\REVIEW_REPORT.md
+## Objective
+Perform strict forensic integrity audit on the Aperture Grafik v0.3.1 release artifacts, codebase, deployment records, and verification proofs.
 
-Tasks:
-1. Conduct an independent forensic integrity audit of the Aperture Grafik codebase.
-2. Verify zero mocks, zero fake implementations, zero hardcoded test pass values or cheating mechanisms in production code (`lib/`).
-3. Verify that all P0/P1 remediation fixes are genuine, production-grade implementations:
-   - Button size fix (`app_theme.dart`)
-   - Calendar month selector fix (`app_shell.dart`)
-   - SQLite quarantine & transactions (`sqlite_app_repository.dart`)
-   - AsyncValue error state preservation (`app_controller.dart`)
-   - Statistics chart bucketing (`app_shell.dart`)
-   - Overnight shift logic (`app_shell.dart`)
-   - Safe enum deserialization (`models.dart`)
-   - Backup import hardening (`app_shell.dart`)
-   - Dead dependencies removal (`pubspec.yaml`)
-4. Confirm static analysis status (`flutter analyze`) and automated test execution (`flutter test`).
-5. Output your verdict (CLEAN or INTEGRITY VIOLATION) and evidence to F:\Projects\aperture-grafik\.agents\auditor_1\handoff.md.
+## Working Directory
+- Project Root: F:\Projects\aperture-grafik
+- Agent Directory: F:\Projects\aperture-grafik\.agents\auditor_1
 
-## 2026-09-23T14:22:47Z
-You are the Forensic Integrity Auditor for Aperture Grafik.
-Your working directory is F:\Projects\aperture-grafik\.agents\auditor_1.
-The codebase is located at F:\Projects\aperture-grafik.
-Read your instructions at F:\Projects\aperture-grafik\.agents\auditor_1\DISPATCH.md.
-Also refer to F:\Projects\aperture-grafik\ORIGINAL_REQUEST.md and F:\Projects\aperture-grafik\REVIEW_REPORT.md.
+## Mandatory Inputs to Inspect
+- F:\Projects\aperture-grafik\.agents\ORIGINAL_REQUEST.md
+- F:\Projects\aperture-grafik\.agents\worker_m1_build\handoff.md
+- F:\Projects\aperture-grafik\.agents\worker_m2_deploy\handoff.md
+- F:\Projects\aperture-grafik\.agents\worker_m3_autoupdate\handoff.md
+- Local repository files: `pubspec.yaml`, `build/app/outputs/flutter-apk/app-release.apk`, `C:\Users\kotpe\OneDrive\Desktop\aperture-grafik.apk`, `aperture-grafik-release.apk`
+- Git commit tree, tag objects, remotes
 
-Perform a forensic integrity verification on Aperture Grafik:
-1. Verify that production code in `lib/` has zero fake implementations, zero mocks, zero hardcoded return values, and zero dummy facades.
-2. Verify that the P0/P1 fixes are genuine and properly integrated in the codebase:
-   - Button size fix in `lib/core/theme/app_theme.dart` (`const Size(64, 56)`)
-   - Calendar month selector in `lib/presentation/app_shell.dart` (`Expanded` with `ellipsis`)
-   - SQLite quarantine table and transactions in `lib/data/sqlite_app_repository.dart`
-   - State preservation in `lib/application/app_controller.dart` (`state = previousState`)
-   - Statistics chart bucketing in `lib/presentation/app_shell.dart` (week difference, month bucketing)
-   - Overnight shift detection in `lib/presentation/app_shell.dart`
-   - Safe enum deserialization in `lib/domain/models.dart` (`byNameOr`)
-   - Backup import hardening in `lib/presentation/app_shell.dart` (`FilePicker` safeguards and `catch (_)`)
-   - Dead dependencies removal in `pubspec.yaml`
-3. Verify test validity and static analysis.
+## Forensic Checks (Zero Tolerance)
+1. Verify no fake or dummy files were created.
+2. Verify that the APK binary is genuine, valid Android APK (ZIP structure containing AndroidManifest.xml, classes.dex, resources.arsc, lib/).
+3. Verify that SHA-1/SHA-256 hashes across build, desktop, and deployment artifacts match.
+4. Verify that tests and static analysis were genuinely executed and pass.
+5. Verify that GitLab Generic Package and Release were genuinely created and not mocked.
+6. Verify that GitHub release is genuine.
 
-Emit your final verdict: CLEAN or INTEGRITY VIOLATION.
-Write your full findings and evidence in F:\Projects\aperture-grafik\.agents\auditor_1\handoff.md.
-Then send a completion message back to the orchestrator.
+Emit verdict (`CLEAN` or `INTEGRITY VIOLATION`) in `F:\Projects\aperture-grafik\.agents\auditor_1\handoff.md` and message the orchestrator.
+
+## 2026-09-23T17:46:47Z
+You are auditor_1, the Forensic Integrity Auditor for the Aperture Grafik v0.3.1 release.
+Working directory: F:\Projects\aperture-grafik\.agents\auditor_1.
+Project root: F:\Projects\aperture-grafik.
+
+Read your task description in F:\Projects\aperture-grafik\.agents\auditor_1\DISPATCH.md and ORIGINAL_REQUEST.md at F:\Projects\aperture-grafik\.agents\ORIGINAL_REQUEST.md.
+
+Perform forensic verification across all artifacts:
+1. Validate APK binary integrity (APK file size, SHA-1 EFC6CFBF1FAF4A50A4B06A6CEB70832347188F47 across local build, desktop, and remote deployments).
+2. Validate that no dummy, mock, or fake files/endpoints were used.
+3. Validate genuine git history, commit SHA, and tag v0.3.1.
+4. Validate genuine test execution and static analysis clean status.
+5. Validate live GitLab and GitHub endpoints.
+
+Emit verdict: CLEAN or INTEGRITY VIOLATION in F:\Projects\aperture-grafik\.agents\auditor_1\handoff.md and message the orchestrator.

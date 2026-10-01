@@ -53,12 +53,16 @@ Deploy and verify v0.3.1 release of Aperture Grafik across GitLab Generic Packag
 ## Team Roster
 | Agent | Type | Work Item | Status | Conv ID |
 |-------|------|-----------|--------|---------|
-| worker_m1_build | devops-automator | Milestone 1: Version bump & Release APK build | in-progress | fe99ea01-cdd0-4d11-b419-dd5cfe8d3116 |
+| worker_m1_build | devops-automator | Milestone 1: Version bump & Release APK build | completed | fe99ea01-cdd0-4d11-b419-dd5cfe8d3116 |
+| worker_m2_deploy | teamwork_preview_worker | Milestone 2: Release Deployment & Verification | completed | 1ba5b690-0a0e-46f1-b618-085ec98b33c0 |
+| worker_m3_autoupdate | teamwork_preview_worker | Milestone 3: Desktop Distribution & Auto-Update Verification | completed | fffd384a-b9f5-4466-aa5b-82611a22d615 |
+| reviewer_1 | teamwork_preview_reviewer | Independent Release Review | completed (APPROVE) | 66c0e552-6125-4907-b941-ce9e2e63dc08 |
+| auditor_1 | teamwork_preview_auditor | Forensic Integrity Audit | completed (CLEAN) | c57839aa-1610-4eaf-90c0-ac3a0146d764 |
 
 ## Succession Status
 - Succession required: no
-- Spawn count: 1 / 16
-- Pending subagents: fe99ea01-cdd0-4d11-b419-dd5cfe8d3116
+- Spawn count: 5 / 16
+- Pending subagents: none
 - Predecessor: none
 - Successor: not yet spawned
 

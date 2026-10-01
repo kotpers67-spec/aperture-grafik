@@ -810,6 +810,11 @@ class _StatisticsPageState extends ConsumerState<StatisticsPage> {
       0,
       (sum, item) => sum + item.earningsMinor,
     );
+    // Суммарные отработанные часы за период
+    final totalHours = shifts.fold<double>(0.0, (sum, s) {
+      final mins = s.actualEnd.difference(s.actualStart).inMinutes;
+      return sum + (mins < 0 ? 0 : mins / 60.0);
+    });
     final points = <int, int>{};
     for (final shift in shifts) {
       final int key = switch (range) {
@@ -876,6 +881,14 @@ class _StatisticsPageState extends ConsumerState<StatisticsPage> {
                       label: strings.earnings,
                       value: money(data, earnings),
                       icon: Icons.savings_outlined,
+                    ),
+                  ),
+                  SizedBox(
+                    width: constraints.maxWidth,
+                    child: _MetricCard(
+                      label: strings.workedHours,
+                      value: strings.hoursLabel(totalHours),
+                      icon: Icons.schedule_rounded,
                     ),
                   ),
                 ],
@@ -1766,6 +1779,13 @@ class _PayoutSummaryCard extends StatelessWidget {
                                   color: scheme.primary,
                                 ),
                       ),
+                      if (status.estimatedNextPayoutHours > 0)
+                        Text(
+                          strings.hoursLabel(status.estimatedNextPayoutHours),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                        ),
                     ],
                   ),
                 ),
