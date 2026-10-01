@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -1911,6 +1911,14 @@ class _PayoutsSection extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
+                          icon: const Icon(Icons.tune_rounded, size: 20),
+                          tooltip: strings.isRu
+                              ? 'Адаптивная зарплата'
+                              : 'Adaptive salary',
+                          onPressed: () =>
+                              _showAdaptiveSalarySheet(context, item),
+                        ),
+                        IconButton(
                           icon: const Icon(Icons.edit_outlined, size: 20),
                           onPressed: () => showPayoutEditor(
                             context,
@@ -1957,6 +1965,106 @@ class _PayoutsSection extends StatelessWidget {
                   );
                 },
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAdaptiveSalarySheet(BuildContext context, Payout payout) {
+    final strings = Strings(data.settings.language);
+    final scheme = Theme.of(context).colorScheme;
+    final allPayouts = [...data.payouts]..sort((a, b) => a.date.compareTo(b.date));
+    final idx = allPayouts.indexWhere((p) => p.id == payout.id);
+    final prevPayout = idx > 0 ? allPayouts[idx - 1] : null;
+    final periodStart = prevPayout != null
+        ? DateTime(prevPayout.date.year, prevPayout.date.month, prevPayout.date.day)
+        : DateTime(1970, 1, 0);
+    final periodEnd = DateTime(payout.date.year, payout.date.month, payout.date.day, 23, 59, 59);
+    final periodShifts = data.shifts
+        .where((s) => s.date.isAfter(periodStart) && !s.date.isAfter(periodEnd))
+        .toList();
+    final excludedCount = periodShifts
+        .where((s) => s.manualEarningsMinor != null || s.customDailyRateMinor != null)
+        .length;
+    final includedCount = periodShifts.length - excludedCount;
+    final amountCtrl = TextEditingController(
+      text: (payout.amountMinor / 100).toStringAsFixed(0),
+    );
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              strings.isRu ? 'Адаптивная зарплата' : 'Adaptive Salary',
+              style: Theme.of(ctx).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              strings.isRu
+                  ? 'Введи фактически полученную сумму. Приложение пересчитает заработок по $includedCount смен${includedCount == 1 ? "е" : "ам"} этого периода.'
+                  : 'Enter the actual amount received. Recalculate $includedCount shift${includedCount == 1 ? "" : "s"} in this period.',
+              style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+            if (excludedCount > 0) ...[
+              const SizedBox(height: 4),
+              Text(
+                strings.isRu
+                    ? '⚠ $excludedCount смен с индивидуальной ставкой — не изменятся.'
+                    : '⚠ $excludedCount shift${excludedCount == 1 ? "" : "s"} with custom rate — unchanged.',
+                style: Theme.of(ctx).textTheme.bodySmall?.copyWith(color: scheme.error),
+              ),
+            ],
+            const SizedBox(height: 16),
+            TextField(
+              controller: amountCtrl,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: strings.isRu ? 'Фактическая сумма (₽)' : 'Actual amount (₽)',
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.currency_ruble_rounded),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: Text(strings.cancel),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    icon: const Icon(Icons.check_rounded, size: 18),
+                    label: Text(strings.isRu ? 'Применить' : 'Apply'),
+                    onPressed: includedCount == 0
+                        ? null
+                        : () async {
+                            final raw = amountCtrl.text.trim().replaceAll(',', '.');
+                            final amount = double.tryParse(raw);
+                            if (amount == null || amount <= 0) return;
+                            Navigator.pop(ctx);
+                            await controller.recalculateShiftsForPayout(
+                              payout: payout,
+                              actualAmountMinor: (amount * 100).round(),
+                            );
+                          },
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),

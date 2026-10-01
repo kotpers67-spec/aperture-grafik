@@ -244,6 +244,90 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
     );
   }
 
+  /// Recalculates earningsMinor for all "normal" shifts in the payout's period
+  /// based on the actual received amount. Excluded: shifts with manualEarningsMinor
+  /// or customDailyRateMinor set (those are already custom).
+  Future<void> recalculateShiftsForPayout({
+    required Payout payout,
+    required int actualAmountMinor,
+  }) async {
+    final allPayouts = [..._data.payouts]
+      ..sort((a, b) => a.date.compareTo(b.date));
+
+    // Period: from previous payout date (exclusive) to this payout date (inclusive)
+    final idx = allPayouts.indexWhere((p) => p.id == payout.id);
+    final prevPayout = idx > 0 ? allPayouts[idx - 1] : null;
+    final periodStart = prevPayout != null
+        ? DateTime(
+            prevPayout.date.year,
+            prevPayout.date.month,
+            prevPayout.date.day,
+          )
+        : DateTime(_data.shifts.isEmpty
+            ? payout.date.year
+            : _data.shifts
+                .map((s) => s.date)
+                .reduce((a, b) => a.isBefore(b) ? a : b)
+                .year,
+            1, 0);
+    final periodEnd = DateTime(
+      payout.date.year,
+      payout.date.month,
+      payout.date.day,
+      23, 59, 59,
+    );
+
+    final periodShifts = _data.shifts.where((s) {
+      return s.date.isAfter(periodStart) && !s.date.isAfter(periodEnd);
+    }).toList();
+
+    // Split: excluded (custom) vs included (normal)
+    final excluded = periodShifts
+        .where((s) => s.manualEarningsMinor != null || s.customDailyRateMinor != null)
+        .toList();
+    final included = periodShifts
+        .where((s) => s.manualEarningsMinor == null && s.customDailyRateMinor == null)
+        .toList();
+
+    if (included.isEmpty) return;
+
+    // Revenue contribution of included shifts (they keep their % from global settings)
+    final revenuePercent = _data.payment.revenuePercent;
+    final totalRevenue = included.fold<int>(
+      0,
+      (sum, s) => sum + (s.revenueMinor * revenuePercent / 100).round(),
+    );
+
+    // Excluded shifts keep their earnings; subtract from actual to find what
+    // the normal shifts must have earned together
+    final excludedTotal =
+        excluded.fold<int>(0, (sum, s) => sum + s.earningsMinor);
+    final adjustedTotal = actualAmountMinor - excludedTotal - totalRevenue;
+    if (included.isEmpty) return;
+    final newDailyRateMinor = (adjustedTotal / included.length).round();
+
+    final now = DateTime.now();
+    final updatedIncluded = included.map((s) {
+      final revenueContrib =
+          (s.revenueMinor * revenuePercent / 100).round();
+      return s.copyWith(
+        earningsMinor: newDailyRateMinor + revenueContrib,
+        updatedAt: now,
+      );
+    }).toList();
+
+    final unchanged = _data.shifts
+        .where((s) => !periodShifts.any((ps) => ps.id == s.id))
+        .toList();
+
+    await _save(
+      _data.copyWith(
+        shifts: [...unchanged, ...excluded, ...updatedIncluded]
+          ..sort((a, b) => b.date.compareTo(a.date)),
+      ),
+    );
+  }
+
   Future<void> deletePayout(String id) => _save(
     _data.copyWith(
       payouts: _data.payouts.where((item) => item.id != id).toList(),
