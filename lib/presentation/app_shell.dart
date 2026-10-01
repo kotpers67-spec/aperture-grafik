@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -1011,6 +1011,17 @@ class ProfilePage extends ConsumerWidget {
             title: strings.payoutNotifications,
             subtitle: strings.payoutNotificationsSubtitle,
           ),
+          _SettingsSwitch(
+            value: data.settings.adaptiveSalaryEnabled,
+            onChanged: (value) => controller.updateSettings(
+              data.settings.copyWith(adaptiveSalaryEnabled: value),
+            ),
+            icon: Icons.tune_rounded,
+            title: strings.isRu ? 'Адаптивная зарплата' : 'Adaptive salary',
+            subtitle: strings.isRu
+                ? 'Пересчёт смен по фактической выплате'
+                : 'Recalculate shifts from actual payout',
+          ),
           const SizedBox(height: 18),
           _SectionTitle(strings.isRu ? 'Работа' : 'Work'),
           _SettingsTile(
@@ -1910,14 +1921,15 @@ class _PayoutsSection extends StatelessWidget {
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        IconButton(
-                          icon: const Icon(Icons.tune_rounded, size: 20),
-                          tooltip: strings.isRu
-                              ? 'Адаптивная зарплата'
-                              : 'Adaptive salary',
-                          onPressed: () =>
-                              _showAdaptiveSalarySheet(context, item),
-                        ),
+                        if (data.settings.adaptiveSalaryEnabled)
+                          IconButton(
+                            icon: const Icon(Icons.tune_rounded, size: 20),
+                            tooltip: strings.isRu
+                                ? 'Адаптивная зарплата'
+                                : 'Adaptive salary',
+                            onPressed: () =>
+                                _showAdaptiveSalarySheet(context, item),
+                          ),
                         IconButton(
                           icon: const Icon(Icons.edit_outlined, size: 20),
                           onPressed: () => showPayoutEditor(

@@ -50,6 +50,7 @@ class AppSettings {
     required this.notificationsEnabled,
     this.payoutNotificationsEnabled = true,
     this.hasRatedProject = false,
+    this.adaptiveSalaryEnabled = true,
   });
 
   final AppLanguage language;
@@ -59,6 +60,7 @@ class AppSettings {
   final bool notificationsEnabled;
   final bool payoutNotificationsEnabled;
   final bool hasRatedProject;
+  final bool adaptiveSalaryEnabled;
 
   AppSettings copyWith({
     AppLanguage? language,
@@ -68,6 +70,7 @@ class AppSettings {
     bool? notificationsEnabled,
     bool? payoutNotificationsEnabled,
     bool? hasRatedProject,
+    bool? adaptiveSalaryEnabled,
   }) => AppSettings(
     language: language ?? this.language,
     currency: currency ?? this.currency,
@@ -77,6 +80,7 @@ class AppSettings {
     payoutNotificationsEnabled:
         payoutNotificationsEnabled ?? this.payoutNotificationsEnabled,
     hasRatedProject: hasRatedProject ?? this.hasRatedProject,
+    adaptiveSalaryEnabled: adaptiveSalaryEnabled ?? this.adaptiveSalaryEnabled,
   );
 
   Map<String, dynamic> toJson() => {
@@ -87,6 +91,7 @@ class AppSettings {
     'notificationsEnabled': notificationsEnabled,
     'payoutNotificationsEnabled': payoutNotificationsEnabled,
     'hasRatedProject': hasRatedProject,
+    'adaptiveSalaryEnabled': adaptiveSalaryEnabled,
   };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) => AppSettings(
@@ -106,6 +111,7 @@ class AppSettings {
     payoutNotificationsEnabled:
         json['payoutNotificationsEnabled'] as bool? ?? true,
     hasRatedProject: json['hasRatedProject'] as bool? ?? false,
+    adaptiveSalaryEnabled: json['adaptiveSalaryEnabled'] as bool? ?? true,
   );
 }
 
