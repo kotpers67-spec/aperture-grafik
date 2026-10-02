@@ -101,31 +101,23 @@ void main() {
   });
 
   group('UpdateService checkForUpdates', () {
-    const gitlabJson = '''
+    const githubJson = '''
     {
       "tag_name": "v0.3.1",
-      "name": "v0.3.1 - In-App Background Updater & Telegram Feedback",
-      "description": "Release v0.3.1 description",
-      "released_at": "2026-09-23T17:25:13.169Z",
-      "assets": {
-        "count": 1,
-        "links": [
-          {
-            "id": 1,
-            "name": "aperture-grafik.apk",
-            "url": "https://gitlab.com/api/v4/projects/santiyastudio%2Faperture-grafik/packages/generic/aperture-grafik/0.3.1/aperture-grafik.apk",
-            "direct_asset_url": "https://gitlab.com/api/v4/projects/santiyastudio%2Faperture-grafik/packages/generic/aperture-grafik/0.3.1/aperture-grafik.apk",
-            "link_type": "package"
-          }
-        ]
-      }
+      "body": "Release v0.3.1 description",
+      "published_at": "2026-09-23T17:25:13.169Z",
+      "assets": [{
+        "name": "aperture-grafik.apk",
+        "size": 59919418,
+        "browser_download_url": "https://github.com/santiyastudio-lgtm/aperture-grafik/releases/download/v0.3.1/aperture-grafik.apk"
+      }]
     }
     ''';
 
     test('detects v0.3.1 as newer from v0.2.0 and v0.3.0, but not from v0.3.1', () async {
       final client = MockClient((request) async {
-        if (request.url.path.contains('releases/permalink/latest')) {
-          return http.Response(gitlabJson, 200, headers: {'content-type': 'application/json'});
+        if (request.url.host == 'api.github.com') {
+          return http.Response(githubJson, 200, headers: {'content-type': 'application/json'});
         }
         return http.Response('Not Found', 404);
       });
@@ -140,7 +132,7 @@ void main() {
       expect(rel020.version, '0.3.1');
       expect(
         rel020.downloadUrl,
-        'https://gitlab.com/api/v4/projects/santiyastudio%2Faperture-grafik/packages/generic/aperture-grafik/0.3.1/aperture-grafik.apk',
+        'https://github.com/santiyastudio-lgtm/aperture-grafik/releases/download/v0.3.1/aperture-grafik.apk',
       );
 
       // Check from v0.3.0
@@ -159,7 +151,7 @@ void main() {
       expect(rel031b4!.isNewer, isFalse);
     });
 
-    test('falls back to secondary GitHub endpoint if GitLab is unreachable', () async {
+    test('uses GitHub Releases as the only update source', () async {
       const githubJson = '''
       {
         "tag_name": "v0.3.1",
@@ -175,10 +167,9 @@ void main() {
       }
       ''';
 
+      final requestedHosts = <String>[];
       final client = MockClient((request) async {
-        if (request.url.host == 'gitlab.com') {
-          return http.Response('Server Error', 500);
-        }
+        requestedHosts.add(request.url.host);
         if (request.url.host == 'api.github.com') {
           return http.Response(githubJson, 200, headers: {'content-type': 'application/json'});
         }
@@ -193,6 +184,7 @@ void main() {
       expect(release.tag, 'v0.3.1');
       expect(release.sizeBytes, 59919418);
       expect(release.downloadUrl, 'https://github.com/santiyastudio-lgtm/aperture-grafik/releases/download/v0.3.1/aperture-grafik.apk');
+      expect(requestedHosts, ['api.github.com']);
     });
   });
 
@@ -247,24 +239,4 @@ void main() {
     });
   });
 
-  group('Live network validation (GitLab endpoint)', () {
-    test('queries live GitLab release permalink and detects updates dynamically', () async {
-      const service = UpdateService();
-
-      // Check from v0.2.0
-      final rel020 = await service.checkForUpdates(currentVersion: '0.2.0');
-      expect(rel020, isNotNull);
-      expect(rel020!.tag, startsWith('v'));
-      expect(rel020.isNewer, isTrue);
-      expect(
-        rel020.downloadUrl,
-        endsWith('/${rel020.version}/aperture-grafik.apk'),
-      );
-      final current = await service.checkForUpdates(
-        currentVersion: rel020.version,
-      );
-      expect(current, isNotNull);
-      expect(current!.isNewer, isFalse);
-    });
-  });
 }

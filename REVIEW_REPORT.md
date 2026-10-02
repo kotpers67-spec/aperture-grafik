@@ -4,7 +4,7 @@
 **Target Codebase**: `F:\Projects\aperture-grafik`  
 **Review Type**: Full-Scope Architectural, Financial, UI/UX, and Data Persistence Audit  
 **Toolchain Baseline**: Flutter SDK ^3.8.0, Dart SDK ^3.8.0, `flutter_lints` ^6.0.0  
-**Test Suite Status**: Full current suite passed (40 tests; see verification below)
+**Test Suite Status**: Full current suite passed (39 tests; see verification below)
 **Static Analysis Status**: `flutter analyze` reports no issues
 
 > **Status note (2026-10-02):** This report began as an audit snapshot from 2026-09-23. The earlier findings and remediation roadmap below are historical; some items were fixed in the 2026-10-02 working tree. Do not read the old scorecard or “P0” count as the current status. This update records verified changes and remaining follow-up rather than claiming every historical finding was repaired.
@@ -360,9 +360,11 @@ Verified in the current working tree:
 - Advance share defaults to 30%, is persisted in backup JSON, is editable in payout settings, and salary share is the complementary remainder.
 - Payout forecasts attribute late-month advances to their accrual month, subtract actual recorded advances from salary, and avoid counting an already-recorded payout again as upcoming.
 - Recalculation for a late advance covers all shifts in its accrual month, is repeatable, and caps regular daily rate at the configured rate. Original earnings are tracked so disabling adaptive salary restores them; legacy shifts without originals are normalized conservatively.
+- Disabling adaptive salary now restores every regular shift to the configured daily rate (plus its applicable revenue share), including days whose adaptive amount had fallen below the configured rate; manual/custom-rate shifts are left intact.
 - Repeating schedules continue before their anchor date; shift active-time comparisons include exact start/end boundaries.
 - Calendar transitions, filling a shift, payout amount transitions, design styles (glass, neon, minimal, neomorphic plus existing), and a motion toggle are implemented. Calendar motion respects reduced-motion preferences.
 - Visual-only settings changes do not recreate notification schedules.
+- In-app update checks use GitHub Releases as the sole source. A regression test asserts that checking for a release only contacts `api.github.com`.
 - Added regression tests cover payout-cycle math, repeat recalculation, restore behavior, settings serialization, notification schedule changes, and calendar styles/transitions.
 
 Verification performed from `F:\Projects\aperture-grafik` on 2026-10-02:
@@ -370,7 +372,7 @@ Verification performed from `F:\Projects\aperture-grafik` on 2026-10-02:
 | Check | Result |
 |---|---|
 | `flutter analyze` | Passed: no issues found |
-| Full `flutter test` suite | Passed: all 40 tests |
+| Full `flutter test` suite | Passed: all 39 tests |
 | `git diff --check` | Passed; Git emitted only line-ending conversion warnings |
 
 The following historical audit topics remain unverified or outside the fixes listed above and need their own focused remediation before treating the repository as fully remediated: SQLite corruption/recovery behavior, transient save-failure UI handling, chart grouping across months/years, overnight-shift accounting edge cases, broad compact-screen layout coverage, and repository-level persistence tests. The presentation file also remains monolithic. This update does not certify those topics as fixed.

@@ -107,9 +107,7 @@ class SemVer {
 class UpdateService {
   const UpdateService();
 
-  // Primary: GitLab (public project & generic package registry)
-  static const String gitlabProject = 'santiyastudio%2Faperture-grafik';
-  // Secondary: GitHub (backup mirror)
+  // GitHub Releases is the single source of app updates.
   static const String githubRepo = 'santiyastudio-lgtm/aperture-grafik';
 
   Future<AppReleaseInfo?> checkForUpdates({
@@ -118,41 +116,6 @@ class UpdateService {
   }) async {
     final httpClient = client ?? http.Client();
     try {
-      // 1. Primary: Try GitLab Releases API
-      try {
-        final uri = Uri.parse('https://gitlab.com/api/v4/projects/$gitlabProject/releases/permalink/latest');
-        final response = await httpClient.get(
-          uri,
-          headers: {
-            'User-Agent': 'ApertureGrafik-Updater',
-          },
-        ).timeout(const Duration(seconds: 8));
-
-        if (response.statusCode == 200) {
-          final json = jsonDecode(response.body) as Map<String, dynamic>;
-          final release = _parseGitlabRelease(json, currentVersion);
-          if (release != null) return release;
-        }
-      } catch (_) {
-        // Fallback to GitLab list
-        try {
-          final uri = Uri.parse('https://gitlab.com/api/v4/projects/$gitlabProject/releases?per_page=1');
-          final response = await httpClient.get(
-            uri,
-            headers: {'User-Agent': 'ApertureGrafik-Updater'},
-          ).timeout(const Duration(seconds: 8));
-
-          if (response.statusCode == 200) {
-            final list = jsonDecode(response.body) as List<dynamic>;
-            if (list.isNotEmpty && list.first is Map<String, dynamic>) {
-              final release = _parseGitlabRelease(list.first as Map<String, dynamic>, currentVersion);
-              if (release != null) return release;
-            }
-          }
-        } catch (_) {}
-      }
-
-      // 2. Secondary Fallback: Try GitHub Releases API
       try {
         final uri = Uri.parse('https://api.github.com/repos/$githubRepo/releases/latest');
         final response = await httpClient.get(
@@ -168,9 +131,7 @@ class UpdateService {
           final release = _parseGithubRelease(json, currentVersion);
           if (release != null) return release;
         }
-      } catch (_) {
-        // All sources unavailable or network offline
-      }
+      } catch (_) {}
 
       return null;
     } finally {
@@ -178,40 +139,6 @@ class UpdateService {
         httpClient.close();
       }
     }
-  }
-
-  AppReleaseInfo? _parseGitlabRelease(Map<String, dynamic> json, String currentVersion) {
-    final tagName = json['tag_name'] as String? ?? '';
-    final description = json['description'] as String? ?? '';
-    final releasedAtStr = json['released_at'] as String?;
-    final releasedAt = releasedAtStr != null ? DateTime.tryParse(releasedAtStr) : null;
-
-    final rawVersion = tagName.replaceFirst(RegExp(r'^[vV]'), '');
-    final links = (json['assets'] as Map<String, dynamic>?)?['links'];
-    final apkLink = links is List
-        ? links.whereType<Map<String, dynamic>>().firstWhere(
-            (link) => (link['name'] as String? ?? '')
-                .toLowerCase()
-                .endsWith('.apk'),
-            orElse: () => const <String, dynamic>{},
-          )
-        : const <String, dynamic>{};
-    final apkUrl = (apkLink['direct_asset_url'] as String?) ??
-        (apkLink['url'] as String?) ??
-        'https://gitlab.com/api/v4/projects/$gitlabProject/packages/generic/aperture-grafik/$rawVersion/aperture-grafik.apk';
-
-    final remoteSemver = SemVer.parse(tagName);
-    final localSemver = SemVer.parse(currentVersion);
-    final isNewer = remoteSemver.isNewerThan(localSemver);
-
-    return AppReleaseInfo(
-      tag: tagName,
-      version: remoteSemver.toString(),
-      notes: description,
-      downloadUrl: apkUrl,
-      publishedAt: releasedAt,
-      isNewer: isNewer,
-    );
   }
 
   AppReleaseInfo? _parseGithubRelease(Map<String, dynamic> json, String currentVersion) {

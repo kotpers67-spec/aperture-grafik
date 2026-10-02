@@ -107,18 +107,21 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
               .round();
       final normalEarnings = _data.payment.dailyRateMinor + revenue;
       if (original == null) {
-        // Older app versions did not retain pre-adjustment values. Recover
-        // regular shifts from the configured rate so legacy inflated amounts
-        // are removed as adaptive salary is switched off.
+        // Older app versions did not retain adjustment metadata. Normalize
+        // every regular shift to the current configured daily rate when the
+        // feature is disabled.
         if (shift.manualEarningsMinor != null ||
             shift.customDailyRateMinor != null) {
           return shift;
         }
-        if (shift.earningsMinor <= normalEarnings) return shift;
-        return shift.copyWith(earningsMinor: normalEarnings, updatedAt: now);
+        return shift.copyWith(
+          earningsMinor: normalEarnings,
+          updatedAt: now,
+          clearAdaptiveEarningsOriginal: true,
+        );
       }
       return shift.copyWith(
-        earningsMinor: original > normalEarnings ? normalEarnings : original,
+        earningsMinor: normalEarnings,
         updatedAt: now,
         clearAdaptiveEarningsOriginal: true,
       );

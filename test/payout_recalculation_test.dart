@@ -120,7 +120,7 @@ void main() {
     },
   );
 
-  test('disabling adaptive salary restores original shift earnings', () async {
+  test('disabling adaptive salary restores the configured daily rate', () async {
     final shift = _shift('adjusted', DateTime(2026, 9, 20), 375000);
     final payout = _payout(
       'advance',
@@ -154,6 +154,31 @@ void main() {
       controller.state.requireValue.shifts.single.adaptiveEarningsOriginalMinor,
       isNull,
     );
+  });
+
+  test('disabling adaptive salary restores configured rate after a decrease', () async {
+    final date = DateTime(2026, 9, 20);
+    final shift = _shift('lowered', date, 70000).copyWith(
+      adaptiveEarningsOriginalMinor: 100000,
+    );
+    final state = _state(shifts: [shift], payouts: const []);
+    final repository = _MemoryRepository(
+      state.copyWith(
+        settings: state.settings.copyWith(adaptiveSalaryEnabled: true),
+      ),
+    );
+    final controller = AppController(repository);
+    await controller.initialize();
+
+    await controller.updateSettings(
+      controller.state.requireValue.settings.copyWith(
+        adaptiveSalaryEnabled: false,
+      ),
+    );
+
+    final restored = controller.state.requireValue.shifts.single;
+    expect(restored.earningsMinor, 130000);
+    expect(restored.adaptiveEarningsOriginalMinor, isNull);
   });
 }
 
