@@ -1,7 +1,7 @@
 name: aperture_grafik
 description: Offline-first work schedule, revenue and pay tracker.
 publish_to: none
-version: 0.3.4+10
+version: 0.3.5+11
 
 environment:
   sdk: ^3.8.0

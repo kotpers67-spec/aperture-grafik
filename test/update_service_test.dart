@@ -248,29 +248,23 @@ void main() {
   });
 
   group('Live network validation (GitLab endpoint)', () {
-    test('queries live GitLab release permalink and detects v0.3.1 update', () async {
+    test('queries live GitLab release permalink and detects updates dynamically', () async {
       const service = UpdateService();
 
       // Check from v0.2.0
       final rel020 = await service.checkForUpdates(currentVersion: '0.2.0');
       expect(rel020, isNotNull);
-      expect(rel020!.tag, 'v0.3.1');
-      expect(rel020.version, '0.3.1');
+      expect(rel020!.tag, startsWith('v'));
       expect(rel020.isNewer, isTrue);
       expect(
         rel020.downloadUrl,
-        'https://gitlab.com/api/v4/projects/santiyastudio%2Faperture-grafik/packages/generic/aperture-grafik/0.3.1/aperture-grafik.apk',
+        endsWith('/${rel020.version}/aperture-grafik.apk'),
       );
-
-      // Check from v0.3.0
-      final rel030 = await service.checkForUpdates(currentVersion: '0.3.0');
-      expect(rel030, isNotNull);
-      expect(rel030!.isNewer, isTrue);
-
-      // Check from v0.3.1
-      final rel031 = await service.checkForUpdates(currentVersion: '0.3.1');
-      expect(rel031, isNotNull);
-      expect(rel031!.isNewer, isFalse);
+      final current = await service.checkForUpdates(
+        currentVersion: rel020.version,
+      );
+      expect(current, isNotNull);
+      expect(current!.isNewer, isFalse);
     });
   });
 }

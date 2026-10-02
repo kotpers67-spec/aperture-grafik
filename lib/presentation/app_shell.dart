@@ -50,7 +50,7 @@ class _AppShellState extends ConsumerState<AppShell> {
       try {
         packageInfo = await PackageInfo.fromPlatform();
       } catch (_) {}
-      final currentVersion = packageInfo?.version ?? '0.3.3';
+      final currentVersion = packageInfo?.version ?? '0.3.5';
 
       const updateService = UpdateService();
       final release = await updateService.checkForUpdates(currentVersion: currentVersion);
@@ -1112,7 +1112,7 @@ Future<void> _handleCheckUpdates(BuildContext context, Strings strings) async {
   try {
     packageInfo = await PackageInfo.fromPlatform();
   } catch (_) {}
-  final currentVersion = packageInfo?.version ?? '0.3.0';
+  final currentVersion = packageInfo?.version ?? '0.3.5';
 
   if (!context.mounted) return;
   ScaffoldMessenger.of(context).showSnackBar(
@@ -1761,12 +1761,27 @@ class _PayoutSummaryCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        money(data, status.earnedSinceLastPayoutMinor),
-                        style:
-                            Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 320),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        transitionBuilder: (child, animation) => FadeTransition(
+                          opacity: animation,
+                          child: SlideTransition(
+                            position: Tween<Offset>(
+                              begin: const Offset(0, 0.12),
+                              end: Offset.zero,
+                            ).animate(animation),
+                            child: child,
+                          ),
+                        ),
+                        child: Text(
+                          money(data, status.earnedSinceLastPayoutMinor),
+                          key: ValueKey(status.earnedSinceLastPayoutMinor),
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -1790,13 +1805,21 @@ class _PayoutSummaryCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        money(data, status.estimatedNextPayoutMinor),
-                        style:
-                            Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: scheme.primary,
-                                ),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 420),
+                        switchInCurve: Curves.easeOutBack,
+                        transitionBuilder: (child, animation) => ScaleTransition(
+                          scale: Tween<double>(begin: 0.96, end: 1).animate(animation),
+                          child: FadeTransition(opacity: animation, child: child),
+                        ),
+                        child: Text(
+                          money(data, status.estimatedNextPayoutMinor),
+                          key: ValueKey(status.estimatedNextPayoutMinor),
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: scheme.primary,
+                          ),
+                        ),
                       ),
                       if (status.estimatedNextPayoutHours > 0)
                         Text(
@@ -1929,7 +1952,8 @@ class _PayoutsSection extends StatelessWidget {
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (data.settings.adaptiveSalaryEnabled)
+                        if (data.settings.adaptiveSalaryEnabled &&
+                            item.kind == PayoutKind.advance)
                           IconButton(
                             icon: const Icon(Icons.tune_rounded, size: 20),
                             tooltip: strings.isRu
@@ -1999,10 +2023,13 @@ class _PayoutsSection extends StatelessWidget {
     final prevPayout = idx > 0 ? allPayouts[idx - 1] : null;
     final periodStart = prevPayout != null
         ? DateTime(prevPayout.date.year, prevPayout.date.month, prevPayout.date.day)
-        : DateTime(1970, 1, 0);
-    final periodEnd = DateTime(payout.date.year, payout.date.month, payout.date.day, 23, 59, 59);
+        : DateTime(0);
+    final periodEnd = DateTime(payout.date.year, payout.date.month, payout.date.day);
     final periodShifts = data.shifts
-        .where((s) => s.date.isAfter(periodStart) && !s.date.isAfter(periodEnd))
+        .where((s) {
+          final shiftDate = DateTime(s.date.year, s.date.month, s.date.day);
+          return shiftDate.isAfter(periodStart) && !shiftDate.isAfter(periodEnd);
+        })
         .toList();
     final excludedCount = periodShifts
         .where((s) => s.manualEarningsMinor != null || s.customDailyRateMinor != null)
@@ -2031,8 +2058,8 @@ class _PayoutsSection extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               strings.isRu
-                  ? 'Введи фактически полученную сумму. Приложение пересчитает заработок по $includedCount смен${includedCount == 1 ? "е" : "ам"} этого периода.'
-                  : 'Enter the actual amount received. Recalculate $includedCount shift${includedCount == 1 ? "" : "s"} in this period.',
+                  ? 'После выплаты аванса укажи фактически полученную сумму. Пересчёт корректирует начисления по $includedCount смен${includedCount == 1 ? "е" : "ам"} с последней выплаты до этого аванса.'
+                  : 'After recording an advance, adjust earnings for $includedCount shifts since the previous payout.',
               style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
             ),
             if (excludedCount > 0) ...[
@@ -2050,7 +2077,7 @@ class _PayoutsSection extends StatelessWidget {
               keyboardType: TextInputType.number,
               autofocus: true,
               decoration: InputDecoration(
-                labelText: strings.isRu ? 'Фактическая сумма (₽)' : 'Actual amount (₽)',
+                labelText: strings.isRu ? 'Сумма аванса (₽)' : 'Advance amount (₽)',
                 border: const OutlineInputBorder(),
                 prefixIcon: const Icon(Icons.currency_ruble_rounded),
               ),

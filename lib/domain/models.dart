@@ -6,6 +6,9 @@ enum Currency { rub }
 
 enum AppThemeMode { standard, laboratory, aperture, chamber }
 
+/// Experimental full design language overrides (layered on top of AppThemeMode).
+enum AppDesignStyle { none, glass, neon, minimal, neomorphic }
+
 enum ScheduleType { threeThree, twoTwo, fiveTwo, weekdays }
 
 enum ShiftKind { scheduled, extra }
@@ -267,6 +270,7 @@ class Shift {
     this.customRevenuePercent,
     this.customDailyRateMinor,
     this.manualEarningsMinor,
+    this.adaptiveEarningsOriginalMinor,
   });
 
   final String id;
@@ -283,6 +287,8 @@ class Shift {
   final double? customRevenuePercent;
   final int? customDailyRateMinor;
   final int? manualEarningsMinor;
+  /// Original earnings captured before an adaptive payout recalculation.
+  final int? adaptiveEarningsOriginalMinor;
 
   Shift copyWith({
     DateTime? date,
@@ -297,6 +303,8 @@ class Shift {
     double? customRevenuePercent,
     int? customDailyRateMinor,
     int? manualEarningsMinor,
+    bool clearAdaptiveEarningsOriginal = false,
+    int? adaptiveEarningsOriginalMinor,
   }) => Shift(
     id: id,
     date: date ?? this.date,
@@ -315,6 +323,9 @@ class Shift {
         customDailyRateMinor ?? this.customDailyRateMinor,
     manualEarningsMinor:
         manualEarningsMinor ?? this.manualEarningsMinor,
+    adaptiveEarningsOriginalMinor: clearAdaptiveEarningsOriginal
+        ? null
+        : adaptiveEarningsOriginalMinor ?? this.adaptiveEarningsOriginalMinor,
   );
 
   Map<String, dynamic> toJson() => {
@@ -335,6 +346,8 @@ class Shift {
       'customDailyRateMinor': customDailyRateMinor,
     if (manualEarningsMinor != null)
       'manualEarningsMinor': manualEarningsMinor,
+    if (adaptiveEarningsOriginalMinor != null)
+      'adaptiveEarningsOriginalMinor': adaptiveEarningsOriginalMinor,
   };
 
   factory Shift.fromJson(Map<String, dynamic> json) => Shift(
@@ -357,6 +370,8 @@ class Shift {
         (json['customDailyRateMinor'] as num?)?.toInt(),
     manualEarningsMinor:
         (json['manualEarningsMinor'] as num?)?.toInt(),
+    adaptiveEarningsOriginalMinor:
+        (json['adaptiveEarningsOriginalMinor'] as num?)?.toInt(),
   );
 }
 

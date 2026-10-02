@@ -89,8 +89,41 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
     );
   }
 
-  Future<void> updateSettings(AppSettings settings) =>
-      _save(_data.copyWith(settings: settings));
+  Future<void> updateSettings(AppSettings settings) async {
+    final restoreAdaptiveEarnings =
+        _data.settings.adaptiveSalaryEnabled && !settings.adaptiveSalaryEnabled;
+    if (!restoreAdaptiveEarnings) {
+      await _save(_data.copyWith(settings: settings));
+      return;
+    }
+
+    final now = DateTime.now();
+    final restoredShifts = _data.shifts.map((shift) {
+      final original = shift.adaptiveEarningsOriginalMinor;
+      final revenue = (shift.revenueMinor *
+              (shift.customRevenuePercent ?? _data.payment.revenuePercent) /
+              100)
+          .round();
+      final normalEarnings = _data.payment.dailyRateMinor + revenue;
+      if (original == null) {
+        // Older app versions did not retain pre-adjustment values. Recover
+        // regular shifts from the configured rate so legacy inflated amounts
+        // are removed as adaptive salary is switched off.
+        if (shift.manualEarningsMinor != null ||
+            shift.customDailyRateMinor != null) {
+          return shift;
+        }
+        if (shift.earningsMinor <= normalEarnings) return shift;
+        return shift.copyWith(earningsMinor: normalEarnings, updatedAt: now);
+      }
+      return shift.copyWith(
+        earningsMinor: original > normalEarnings ? normalEarnings : original,
+        updatedAt: now,
+        clearAdaptiveEarningsOriginal: true,
+      );
+    }).toList();
+    await _save(_data.copyWith(settings: settings, shifts: restoredShifts));
+  }
 
   Future<void> updateSchedule(Schedule schedule) =>
       _save(_data.copyWith(schedule: schedule));
@@ -171,23 +204,23 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
       createdAt: id == null
           ? now
           : _data.shifts
-              .firstWhere(
-                (item) => item.id == id,
-                orElse: () => Shift(
-                  id: '',
-                  date: now,
-                  kind: ShiftKind.scheduled,
-                  actualStart: now,
-                  actualEnd: now,
-                  colleagueIds: const [],
-                  revenueMinor: 0,
-                  earningsMinor: 0,
-                  comment: '',
-                  createdAt: now,
-                  updatedAt: now,
-                ),
-              )
-              .createdAt,
+                .firstWhere(
+                  (item) => item.id == id,
+                  orElse: () => Shift(
+                    id: '',
+                    date: now,
+                    kind: ShiftKind.scheduled,
+                    actualStart: now,
+                    actualEnd: now,
+                    colleagueIds: const [],
+                    revenueMinor: 0,
+                    earningsMinor: 0,
+                    comment: '',
+                    createdAt: now,
+                    updatedAt: now,
+                  ),
+                )
+                .createdAt,
       updatedAt: now,
     );
     final others = _data.shifts.where((item) => item.id != shift.id).toList();
@@ -221,19 +254,19 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
       createdAt: id == null
           ? now
           : _data.payouts
-              .firstWhere(
-                (item) => item.id == id,
-                orElse: () => Payout(
-                  id: '',
-                  date: now,
-                  kind: PayoutKind.advance,
-                  amountMinor: 0,
-                  comment: '',
-                  createdAt: now,
-                  updatedAt: now,
-                ),
-              )
-              .createdAt,
+                .firstWhere(
+                  (item) => item.id == id,
+                  orElse: () => Payout(
+                    id: '',
+                    date: now,
+                    kind: PayoutKind.advance,
+                    amountMinor: 0,
+                    comment: '',
+                    createdAt: now,
+                    updatedAt: now,
+                  ),
+                )
+                .createdAt,
       updatedAt: now,
     );
     final others = _data.payouts.where((item) => item.id != payout.id).toList();
@@ -244,72 +277,107 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
     );
   }
 
-  /// Recalculates earningsMinor for all "normal" shifts in the payout period.
-  /// ADVANCE: implied total = actual / 0.3 so salary correctly shows 70%.
-  /// SALARY:  implied total = actual + advances paid in same period.
-  /// Returns new daily rate minor units for UI display.
+  /// Reconciles regular shifts in the period ending at [payout] to the
+  /// earnings implied by the actual payout. Repeating the operation is safe:
+  /// the target earnings and period membership do not depend on the current
+  /// calculated shift amounts.
+  /// Returns the new base rate (minor units) for UI display.
   Future<int> recalculateShiftsForPayout({
     required Payout payout,
     required int actualAmountMinor,
   }) async {
-    final allPayouts = [..._data.payouts]..sort((a, b) => a.date.compareTo(b.date));
+    final allPayouts = [..._data.payouts]
+      ..sort((a, b) => a.date.compareTo(b.date));
     final idx = allPayouts.indexWhere((p) => p.id == payout.id);
     final prevPayout = idx > 0 ? allPayouts[idx - 1] : null;
     final periodStart = prevPayout != null
-        ? DateTime(prevPayout.date.year, prevPayout.date.month, prevPayout.date.day)
-        : DateTime(_data.shifts.isEmpty
-            ? payout.date.year
-            : _data.shifts.map((s) => s.date).reduce((a, b) => a.isBefore(b) ? a : b).year,
-            1, 0);
-    final periodEnd = DateTime(payout.date.year, payout.date.month, payout.date.day, 23, 59, 59);
+        ? DateTime(
+            prevPayout.date.year,
+            prevPayout.date.month,
+            prevPayout.date.day,
+          )
+        : DateTime(0);
+    final periodEnd = DateTime(
+      payout.date.year,
+      payout.date.month,
+      payout.date.day,
+    );
 
-    final periodShifts = _data.shifts
-        .where((s) => s.date.isAfter(periodStart) && !s.date.isAfter(periodEnd))
-        .toList();
+    final periodShifts = _data.shifts.where((s) {
+      final shiftDate = DateTime(s.date.year, s.date.month, s.date.day);
+      return shiftDate.isAfter(periodStart) && !shiftDate.isAfter(periodEnd);
+    }).toList();
     final excluded = periodShifts
-        .where((s) => s.manualEarningsMinor != null || s.customDailyRateMinor != null)
+        .where(
+          (s) =>
+              s.manualEarningsMinor != null || s.customDailyRateMinor != null,
+        )
         .toList();
     final included = periodShifts
-        .where((s) => s.manualEarningsMinor == null && s.customDailyRateMinor == null)
+        .where(
+          (s) =>
+              s.manualEarningsMinor == null && s.customDailyRateMinor == null,
+        )
         .toList();
 
     if (included.isEmpty) return 0;
 
     final revenuePercent = _data.payment.revenuePercent;
     final totalRevenue = included.fold<int>(
-        0, (sum, s) => sum + (s.revenueMinor * revenuePercent / 100).round());
-    final excludedTotal = excluded.fold<int>(0, (sum, s) => sum + s.earningsMinor);
+      0,
+      (sum, s) => sum + (s.revenueMinor * revenuePercent / 100).round(),
+    );
+    final excludedTotal = excluded.fold<int>(
+      0,
+      (sum, s) => sum + s.earningsMinor,
+    );
 
     // Implied total period earnings based on payout type
     final int impliedTotalMinor;
     if (payout.kind == PayoutKind.advance) {
-      // Advance = 30% of total → total = actual / 0.3, salary will show 70%
-      impliedTotalMinor = (actualAmountMinor / 0.3).round();
+      // Reconcile this completed period to the actual advance amount. Do not
+      // gross it up by 30%: advances may be arbitrary partial payments.
+      impliedTotalMinor = actualAmountMinor;
     } else {
       // Salary = total − advances → total = salary + advances in period
-      final advancesInPeriod = _data.payouts.where((p) {
-        if (p.kind != PayoutKind.advance || p.id == payout.id) return false;
-        final d = DateTime(p.date.year, p.date.month, p.date.day);
-        return d.isAfter(periodStart) && !d.isAfter(periodEnd);
-      }).fold<int>(0, (sum, p) => sum + p.amountMinor);
+      final advancesInPeriod = _data.payouts
+          .where((p) {
+            if (p.kind != PayoutKind.advance || p.id == payout.id) return false;
+            final d = DateTime(p.date.year, p.date.month, p.date.day);
+            return d.isAfter(periodStart) && !d.isAfter(periodEnd);
+          })
+          .fold<int>(0, (sum, p) => sum + p.amountMinor);
       impliedTotalMinor = actualAmountMinor + advancesInPeriod;
     }
 
     final adjustedTotal = impliedTotalMinor - excludedTotal - totalRevenue;
-    final newDailyRateMinor = (adjustedTotal / included.length).round();
+    if (adjustedTotal <= 0) return 0;
+    final reconciledPeriodRate = (adjustedTotal / included.length).round();
     final now = DateTime.now();
     final updatedIncluded = included.map((s) {
       final rev = (s.revenueMinor * revenuePercent / 100).round();
-      return s.copyWith(earningsMinor: newDailyRateMinor + rev, updatedAt: now);
+      // A reconciliation may lower an erroneous historical rate, but must
+      // never inflate shifts beyond the configured daily rate.
+      final configuredRate =
+          s.customDailyRateMinor ?? _data.payment.dailyRateMinor;
+      final reconciledRate = reconciledPeriodRate.clamp(0, configuredRate);
+      return s.copyWith(
+        earningsMinor: reconciledRate + rev,
+        updatedAt: now,
+        adaptiveEarningsOriginalMinor:
+            s.adaptiveEarningsOriginalMinor ?? s.earningsMinor,
+      );
     }).toList();
-    final unchanged = _data.shifts
-        .where((s) => !periodShifts.any((ps) => ps.id == s.id))
+    final updatedById = {for (final shift in updatedIncluded) shift.id: shift};
+    final updatedShifts = _data.shifts
+        .map((shift) => updatedById[shift.id] ?? shift)
         .toList();
-    await _save(_data.copyWith(
-      shifts: [...unchanged, ...excluded, ...updatedIncluded]
-        ..sort((a, b) => b.date.compareTo(a.date)),
-    ));
-    return newDailyRateMinor;
+    await _save(
+      _data.copyWith(
+        shifts: updatedShifts..sort((a, b) => b.date.compareTo(a.date)),
+      ),
+    );
+    return (adjustedTotal / included.length).round();
   }
 
   Future<void> deletePayout(String id) => _save(
