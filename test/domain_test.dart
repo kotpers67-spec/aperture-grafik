@@ -27,6 +27,13 @@ void main() {
         DateTime(2026, 7, 2, 5),
       );
     });
+
+    test('continues a repeating rotation before its anchor date', () {
+      final restDay = DateTime(2026, 6, 30); // rotation continues across anchor
+      expect(service.isWorkDay(schedule, restDay), isFalse);
+      expect(service.isWorkDay(schedule, DateTime(2026, 6, 29)), isFalse);
+      expect(service.isWorkDay(schedule, DateTime(2026, 6, 28)), isTrue);
+    });
   });
 
   test('earnings include fixed rate and revenue percentage in minor units', () {
@@ -38,6 +45,35 @@ void main() {
       salaryDay: 30,
     );
     expect(service.earnings(revenueMinor: 5000000, payment: payment), 550000);
+  });
+
+  test('payment settings default advance to 30 percent and roundtrip custom share', () {
+    const defaults = PaymentSettings(
+      dailyRateMinor: 130000,
+      revenuePercent: 0,
+      advanceDay: 30,
+      salaryDay: 15,
+    );
+    expect(defaults.advancePercent, 30);
+    expect(defaults.salaryPercent, 70);
+    final custom = defaults.copyWith(advancePercent: 40);
+    expect(PaymentSettings.fromJson(custom.toJson()).advancePercent, 40);
+    expect(PaymentSettings.fromJson(custom.toJson()).salaryPercent, 60);
+  });
+
+  test('visual and motion preferences survive backup serialization', () {
+    const settings = AppSettings(
+      language: AppLanguage.russian,
+      currency: Currency.rub,
+      themeMode: AppThemeMode.standard,
+      onboardingComplete: true,
+      notificationsEnabled: true,
+      designStyle: AppDesignStyle.neon,
+      shiftAnimationsEnabled: false,
+    );
+    final restored = AppSettings.fromJson(settings.toJson());
+    expect(restored.designStyle, AppDesignStyle.neon);
+    expect(restored.shiftAnimationsEnabled, isFalse);
   });
 
   test('earnings respect custom daily rate and custom revenue percent', () {
@@ -60,25 +96,28 @@ void main() {
     );
   });
 
-  test('manual earnings override has highest priority over rate and percent', () {
-    const service = FinanceService();
-    const payment = PaymentSettings(
-      dailyRateMinor: 300000,
-      revenuePercent: 5,
-      advanceDay: 15,
-      salaryDay: 30,
-    );
-    expect(
-      service.earnings(
-        revenueMinor: 5000000,
-        payment: payment,
-        customDailyRateMinor: 400000,
-        customRevenuePercent: 10,
-        manualEarningsMinor: 777000,
-      ),
-      777000,
-    );
-  });
+  test(
+    'manual earnings override has highest priority over rate and percent',
+    () {
+      const service = FinanceService();
+      const payment = PaymentSettings(
+        dailyRateMinor: 300000,
+        revenuePercent: 5,
+        advanceDay: 15,
+        salaryDay: 30,
+      );
+      expect(
+        service.earnings(
+          revenueMinor: 5000000,
+          payment: payment,
+          customDailyRateMinor: 400000,
+          customRevenuePercent: 10,
+          manualEarningsMinor: 777000,
+        ),
+        777000,
+      );
+    },
+  );
 
   test(
     'Russian and English date symbols are available before rendering',
@@ -176,48 +215,79 @@ void main() {
       expect(statusAfterSal.nextDate, DateTime(2026, 8, 15));
     });
 
-    test('calculates earned since last payout and next expected salary correctly', () {
-      final shifts = [
-        _shiftWithEarnings(DateTime(2026, 7, 5), 500000),
-        _shiftWithEarnings(DateTime(2026, 7, 10), 500000),
-        _shiftWithEarnings(DateTime(2026, 7, 18), 500000),
-        _shiftWithEarnings(DateTime(2026, 7, 22), 500000),
-      ];
-
-      final advancePayout = Payout(
-        id: 'payout-1',
-        date: DateTime(2026, 7, 15),
-        kind: PayoutKind.advance,
-        amountMinor: 1000000,
-        comment: 'Advance',
-        createdAt: DateTime(2026, 7, 15),
-        updatedAt: DateTime(2026, 7, 15),
+    test('skips a payout already recorded for today', () {
+      final todaySalary = Payout(
+        id: 'salary-today',
+        date: DateTime(2026, 10, 15),
+        kind: PayoutKind.salary,
+        amountMinor: 910000,
+        comment: '',
+        createdAt: DateTime(2026, 10, 15),
+        updatedAt: DateTime(2026, 10, 15),
       );
-
       final state = AppState.initial().copyWith(
         payment: const PaymentSettings(
-          dailyRateMinor: 300000,
-          revenuePercent: 5,
-          advanceDay: 15,
-          salaryDay: 30,
+          dailyRateMinor: 130000,
+          revenuePercent: 0,
+          advanceDay: 30,
+          salaryDay: 15,
+          advancePercent: 40,
         ),
-        shifts: shifts,
-        payouts: [advancePayout],
+        payouts: [todaySalary],
       );
-
       final status = finance.calculatePayoutStatus(
         state: state,
-        now: DateTime(2026, 7, 25),
+        now: DateTime(2026, 10, 15),
       );
-
-      expect(status.lastPayout?.id, 'payout-1');
-      // Shifts on July 18 and July 22 are after July 15 payout: 500000 + 500000 = 1000000
-      expect(status.earnedSinceLastPayoutMinor, 1000000);
-      // Next is Salary (July 30). Total earned in July = 2000000. Advance paid = 1000000.
-      // Expected remaining salary = 2000000 - 1000000 = 1000000.
-      expect(status.nextKind, PayoutKind.salary);
-      expect(status.estimatedNextPayoutMinor, 1000000);
+      expect(status.nextKind, PayoutKind.advance);
+      expect(status.nextDate, DateTime(2026, 10, 30));
     });
+
+    test(
+      'calculates earned since last payout and next expected salary correctly',
+      () {
+        final shifts = [
+          _shiftWithEarnings(DateTime(2026, 7, 5), 500000),
+          _shiftWithEarnings(DateTime(2026, 7, 10), 500000),
+          _shiftWithEarnings(DateTime(2026, 7, 18), 500000),
+          _shiftWithEarnings(DateTime(2026, 7, 22), 500000),
+        ];
+
+        final advancePayout = Payout(
+          id: 'payout-1',
+          date: DateTime(2026, 7, 15),
+          kind: PayoutKind.advance,
+          amountMinor: 1000000,
+          comment: 'Advance',
+          createdAt: DateTime(2026, 7, 15),
+          updatedAt: DateTime(2026, 7, 15),
+        );
+
+        final state = AppState.initial().copyWith(
+          payment: const PaymentSettings(
+            dailyRateMinor: 300000,
+            revenuePercent: 5,
+            advanceDay: 15,
+            salaryDay: 30,
+          ),
+          shifts: shifts,
+          payouts: [advancePayout],
+        );
+
+        final status = finance.calculatePayoutStatus(
+          state: state,
+          now: DateTime(2026, 7, 25),
+        );
+
+        expect(status.lastPayout?.id, 'payout-1');
+        // Shifts on July 18 and July 22 are after July 15 payout: 500000 + 500000 = 1000000
+        expect(status.earnedSinceLastPayoutMinor, 1000000);
+        // Next is Salary (July 30). Total earned in July = 2000000. Advance paid = 1000000.
+        // Expected remaining salary = 2000000 - 1000000 = 1000000.
+        expect(status.nextKind, PayoutKind.salary);
+        expect(status.estimatedNextPayoutMinor, 1000000);
+      },
+    );
 
     test('Payout JSON serialization and AppState roundtrip', () {
       final payout = Payout(
@@ -244,6 +314,64 @@ void main() {
       expect(restored.payouts.first.id, 'p-1');
       expect(restored.payouts.first.amountMinor, 4500000);
     });
+
+    test(
+      'late-month advance and mid-month salary use the monthly 30/70 cycle',
+      () {
+        final shifts = <Shift>[
+          for (var day = 1; day <= 10; day++)
+            _shiftWithEarnings(DateTime(2026, 9, day), 130000),
+          _shiftWithEarnings(DateTime(2026, 10, 2), 130000),
+          _shiftWithEarnings(DateTime(2026, 10, 3), 130000),
+          _shiftWithEarnings(DateTime(2026, 10, 18), 130000),
+          _shiftWithEarnings(DateTime(2026, 10, 25), 130000),
+        ];
+        final advance = Payout(
+          id: 'september-advance',
+          date: DateTime(2026, 10, 1), // recorded late; belongs to September
+          kind: PayoutKind.advance,
+          amountMinor: 390000,
+          comment: '',
+          createdAt: DateTime(2026, 10, 1),
+          updatedAt: DateTime(2026, 10, 1),
+        );
+        final state = AppState.initial().copyWith(
+          payment: const PaymentSettings(
+            dailyRateMinor: 130000,
+            revenuePercent: 0,
+            advanceDay: 30,
+            salaryDay: 15,
+          ),
+          shifts: shifts,
+          payouts: [advance],
+        );
+
+        final salaryStatus = finance.calculatePayoutStatus(
+          state: state,
+          now: DateTime(2026, 10, 5),
+        );
+        expect(salaryStatus.nextKind, PayoutKind.salary);
+        // September remaining 70% (1,300,000 - 390,000) + Oct 1-15 shifts.
+        expect(salaryStatus.estimatedNextPayoutMinor, 1170000);
+
+        final advanceStatus = finance.calculatePayoutStatus(
+          state: state.copyWith(
+            payment: const PaymentSettings(
+              dailyRateMinor: 130000,
+              revenuePercent: 0,
+              advanceDay: 30,
+              salaryDay: 15,
+              advancePercent: 40,
+            ),
+            payouts: [advance.copyWith(date: DateTime(2026, 9, 30))],
+          ),
+          now: DateTime(2026, 10, 20),
+        );
+        expect(advanceStatus.nextKind, PayoutKind.advance);
+        // 40% of the three October shifts completed by Oct 20, excluding Oct 25.
+        expect(advanceStatus.estimatedNextPayoutMinor, 156000);
+      },
+    );
   });
 }
 

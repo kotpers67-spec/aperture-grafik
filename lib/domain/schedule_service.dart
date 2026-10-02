@@ -8,7 +8,6 @@ class ScheduleService {
   bool isWorkDay(Schedule schedule, DateTime date) {
     final target = day(date);
     final anchor = day(schedule.anchorDate);
-    if (target.isBefore(anchor)) return false;
     if (schedule.type == ScheduleType.weekdays) {
       return schedule.weekdays.contains(target.weekday);
     }

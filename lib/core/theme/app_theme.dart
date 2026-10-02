@@ -7,7 +7,10 @@ import '../../domain/models.dart';
 class AppTheme {
   const AppTheme._();
 
-  static ThemeData forMode(AppThemeMode mode) {
+  static ThemeData forMode(
+    AppThemeMode mode, {
+    AppDesignStyle designStyle = AppDesignStyle.none,
+  }) {
     final palette = switch (mode) {
       AppThemeMode.standard => const _Palette(
         seed: Color(0xFF6F4E37),
@@ -35,8 +38,9 @@ class AppTheme {
       brightness: palette.brightness,
       dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
     );
-    final scheme = generated.copyWith(surface: palette.surface);
-    final isDark = palette.brightness == Brightness.dark;
+    final styled = _applyDesignStyle(generated, palette, designStyle);
+    final scheme = styled.scheme ?? generated;
+    final isDark = styled.brightness == Brightness.dark;
     final textTheme = Typography.material2021(
       platform: TargetPlatform.android,
       colorScheme: scheme,
@@ -44,9 +48,9 @@ class AppTheme {
 
     return ThemeData(
       useMaterial3: true,
-      brightness: palette.brightness,
+      brightness: styled.brightness,
       colorScheme: scheme,
-      scaffoldBackgroundColor: palette.surface,
+      scaffoldBackgroundColor: styled.surface,
       dividerColor: scheme.outlineVariant.withValues(alpha: .62),
       visualDensity: VisualDensity.standard,
       textTheme: textTheme.copyWith(
@@ -67,19 +71,15 @@ class AppTheme {
         bodyMedium: textTheme.bodyMedium?.copyWith(height: 1.4),
       ),
       cardTheme: CardThemeData(
-        elevation: isDark ? 0 : 1,
+        elevation: styled.cardElevation,
         shadowColor: Colors.black.withValues(alpha: .08),
         surfaceTintColor: Colors.transparent,
-        color: isDark
-            ? scheme.surfaceContainerHigh
-            : scheme.surfaceContainerLowest,
+        color: styled.cardColor,
         margin: const EdgeInsets.symmetric(vertical: 6),
         clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(24),
-          side: BorderSide(
-            color: scheme.outlineVariant.withValues(alpha: isDark ? .42 : .7),
-          ),
+          side: BorderSide(color: styled.cardBorder),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -184,7 +184,7 @@ class AppTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         toolbarHeight: 68,
-        backgroundColor: palette.surface,
+        backgroundColor: styled.surface,
         surfaceTintColor: Colors.transparent,
         centerTitle: false,
         titleSpacing: 20,
@@ -227,6 +227,107 @@ class AppTheme {
       ),
     );
   }
+
+  static _StyledPalette _applyDesignStyle(
+    ColorScheme base,
+    _Palette palette,
+    AppDesignStyle style,
+  ) {
+    switch (style) {
+      case AppDesignStyle.none:
+        final dark = palette.brightness == Brightness.dark;
+        return _StyledPalette(
+          scheme: base.copyWith(surface: palette.surface),
+          brightness: palette.brightness,
+          surface: palette.surface,
+          cardColor: dark
+              ? base.surfaceContainerHigh
+              : base.surfaceContainerLowest,
+          cardBorder: base.outlineVariant.withValues(alpha: dark ? .42 : .7),
+          cardElevation: dark ? 0 : 1,
+        );
+      case AppDesignStyle.glass:
+        final seed = const Color(0xFF167A9C);
+        final scheme = ColorScheme.fromSeed(
+          seedColor: seed,
+          brightness: Brightness.light,
+          surface: const Color(0xFFEAF5F7),
+        );
+        return _StyledPalette(
+          scheme: scheme,
+          brightness: Brightness.light,
+          surface: Color(0xFFEAF5F7),
+          cardColor: Color(0xDDFBFFFF),
+          cardBorder: Color(0x8875B9C7),
+          cardElevation: 3,
+        );
+      case AppDesignStyle.neon:
+        final scheme =
+            ColorScheme.fromSeed(
+              seedColor: const Color(0xFF68F5E5),
+              brightness: Brightness.dark,
+              surface: const Color(0xFF090D19),
+            ).copyWith(
+              primary: const Color(0xFF68F5E5),
+              secondary: const Color(0xFFFF64D8),
+              surface: const Color(0xFF090D19),
+            );
+        return _StyledPalette(
+          scheme: scheme,
+          brightness: Brightness.dark,
+          surface: const Color(0xFF090D19),
+          cardColor: const Color(0xFF151B2C),
+          cardBorder: const Color(0x8868F5E5),
+          cardElevation: 0,
+        );
+      case AppDesignStyle.minimal:
+        final scheme = ColorScheme.fromSeed(
+          seedColor: const Color(0xFF496B58),
+          brightness: Brightness.light,
+          surface: const Color(0xFFF5F5F0),
+        );
+        return _StyledPalette(
+          scheme: scheme,
+          brightness: Brightness.light,
+          surface: const Color(0xFFF5F5F0),
+          cardColor: const Color(0xFFFFFFFF),
+          cardBorder: const Color(0xFFD9DFD8),
+          cardElevation: 0,
+        );
+      case AppDesignStyle.neomorphic:
+        final scheme = ColorScheme.fromSeed(
+          seedColor: const Color(0xFF775E4C),
+          brightness: Brightness.light,
+          surface: const Color(0xFFEAE4DC),
+        );
+        return _StyledPalette(
+          scheme: scheme,
+          brightness: Brightness.light,
+          surface: const Color(0xFFEAE4DC),
+          cardColor: const Color(0xFFF0EBE4),
+          cardBorder: const Color(0x00FFFFFF),
+          cardElevation: 5,
+        );
+    }
+  }
+}
+
+class _StyledPalette {
+  const _StyledPalette({
+    required this.scheme,
+    required this.brightness,
+    required this.surface,
+    required this.cardColor,
+    required this.cardBorder,
+    required this.cardElevation,
+  });
+
+  final ColorScheme? scheme;
+  final Brightness brightness;
+  final Color surface;
+  final Color cardColor;
+  final Color cardBorder;
+  final double cardElevation;
 }
 
 class _Palette {

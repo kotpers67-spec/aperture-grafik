@@ -1,11 +1,13 @@
 # Aperture Grafik — Comprehensive Code & Architecture Review Report
 
-**Date**: 2026-09-23  
+**Date**: 2026-10-02 (updated audit status)
 **Target Codebase**: `F:\Projects\aperture-grafik`  
 **Review Type**: Full-Scope Architectural, Financial, UI/UX, and Data Persistence Audit  
 **Toolchain Baseline**: Flutter SDK ^3.8.0, Dart SDK ^3.8.0, `flutter_lints` ^6.0.0  
-**Test Suite Status**: 13/13 Passed (100%)  
-**Static Analysis Status**: 0 compile-blocking errors, 2 dead dependencies  
+**Test Suite Status**: Full current suite passed (40 tests; see verification below)
+**Static Analysis Status**: `flutter analyze` reports no issues
+
+> **Status note (2026-10-02):** This report began as an audit snapshot from 2026-09-23. The earlier findings and remediation roadmap below are historical; some items were fixed in the 2026-10-02 working tree. Do not read the old scorecard or “P0” count as the current status. This update records verified changes and remaining follow-up rather than claiming every historical finding was repaired.
 
 ---
 
@@ -19,7 +21,7 @@ The application exhibits several strong foundational virtues:
 3. **100% Baseline Test Pass Rate**: All 13 existing automated tests pass cleanly in under 2 seconds.
 4. **Cohesive Visual Design**: Thoughtfully crafted coffee-shop visual aesthetic with Material 3 design tokens (espresso, caramel, latte, cream palettes).
 
-However, deep technical auditing across the four core dimensions revealed **8 P0 Critical vulnerabilities, 14 P1 High risks, 16 P2 Medium architectural smells, and 8 P3 Polish items**:
+The original 2026-09-23 audit reported **8 P0 Critical vulnerabilities, 14 P1 High risks, 16 P2 Medium architectural smells, and 8 P3 Polish items**. This was a historical snapshot. The current changes address payout-cycle and repeated-recalculation errors, restore behavior when adaptive salary is disabled, motion/design settings, and notification rescheduling on visual-only updates. The full original remediation list has not all been implemented.
 - **Data Safety Vulnerability (P0)**: SQLite database functions as a single JSON blob. Any deserialization failure silently defaults to `AppState.initial()`, and the subsequent save permanently overwrites and obliterates all historical data without backup or quarantine.
 - **Cascading UI Teardown (P0)**: Save failures trigger `AsyncValue.error` without preserving previous data; `.requireValue` calls throw `StateError` and unmount the entire app into a dead-end error screen.
 - **Fatal Layout Crash (P0)**: `app_theme.dart` sets `minimumSize: const Size.fromHeight(56)` on `FilledButtonThemeData`, injecting `width = double.infinity`. In `StatisticsPage`, rendering `FilledButton.tonalIcon` inside an unconstrained horizontal `Row` crashes Flutter with `BoxConstraints forces an infinite width`.
@@ -349,6 +351,31 @@ Result: No issues found! (0 compile-blocking errors, 0 warnings, 0 lints)
 ---
 
 ## 6. Comprehensive Prioritized Action Plan & Roadmap
+
+### 6.1 Current Audit Update (2026-10-02)
+
+Verified in the current working tree:
+
+- Payout defaults are configured for advance on day 30 and salary on day 15 for new profiles; existing saved dates remain intact.
+- Advance share defaults to 30%, is persisted in backup JSON, is editable in payout settings, and salary share is the complementary remainder.
+- Payout forecasts attribute late-month advances to their accrual month, subtract actual recorded advances from salary, and avoid counting an already-recorded payout again as upcoming.
+- Recalculation for a late advance covers all shifts in its accrual month, is repeatable, and caps regular daily rate at the configured rate. Original earnings are tracked so disabling adaptive salary restores them; legacy shifts without originals are normalized conservatively.
+- Repeating schedules continue before their anchor date; shift active-time comparisons include exact start/end boundaries.
+- Calendar transitions, filling a shift, payout amount transitions, design styles (glass, neon, minimal, neomorphic plus existing), and a motion toggle are implemented. Calendar motion respects reduced-motion preferences.
+- Visual-only settings changes do not recreate notification schedules.
+- Added regression tests cover payout-cycle math, repeat recalculation, restore behavior, settings serialization, notification schedule changes, and calendar styles/transitions.
+
+Verification performed from `F:\Projects\aperture-grafik` on 2026-10-02:
+
+| Check | Result |
+|---|---|
+| `flutter analyze` | Passed: no issues found |
+| Full `flutter test` suite | Passed: all 40 tests |
+| `git diff --check` | Passed; Git emitted only line-ending conversion warnings |
+
+The following historical audit topics remain unverified or outside the fixes listed above and need their own focused remediation before treating the repository as fully remediated: SQLite corruption/recovery behavior, transient save-failure UI handling, chart grouping across months/years, overnight-shift accounting edge cases, broad compact-screen layout coverage, and repository-level persistence tests. The presentation file also remains monolithic. This update does not certify those topics as fixed.
+
+---
 
 ### Milestone 1: P0 Emergency Fixes (Target: 1–2 Days)
 - [ ] **Fix M1.1**: Update `app_theme.dart:109, 119` to change `minimumSize: const Size.fromHeight(56)` to `const Size(64, 56)` (resolves fatal button layout crash).

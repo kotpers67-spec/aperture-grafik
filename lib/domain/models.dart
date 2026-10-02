@@ -54,6 +54,8 @@ class AppSettings {
     this.payoutNotificationsEnabled = true,
     this.hasRatedProject = false,
     this.adaptiveSalaryEnabled = true,
+    this.designStyle = AppDesignStyle.none,
+    this.shiftAnimationsEnabled = true,
   });
 
   final AppLanguage language;
@@ -64,6 +66,8 @@ class AppSettings {
   final bool payoutNotificationsEnabled;
   final bool hasRatedProject;
   final bool adaptiveSalaryEnabled;
+  final AppDesignStyle designStyle;
+  final bool shiftAnimationsEnabled;
 
   AppSettings copyWith({
     AppLanguage? language,
@@ -74,6 +78,8 @@ class AppSettings {
     bool? payoutNotificationsEnabled,
     bool? hasRatedProject,
     bool? adaptiveSalaryEnabled,
+    AppDesignStyle? designStyle,
+    bool? shiftAnimationsEnabled,
   }) => AppSettings(
     language: language ?? this.language,
     currency: currency ?? this.currency,
@@ -84,6 +90,9 @@ class AppSettings {
         payoutNotificationsEnabled ?? this.payoutNotificationsEnabled,
     hasRatedProject: hasRatedProject ?? this.hasRatedProject,
     adaptiveSalaryEnabled: adaptiveSalaryEnabled ?? this.adaptiveSalaryEnabled,
+    designStyle: designStyle ?? this.designStyle,
+    shiftAnimationsEnabled:
+        shiftAnimationsEnabled ?? this.shiftAnimationsEnabled,
   );
 
   Map<String, dynamic> toJson() => {
@@ -95,6 +104,8 @@ class AppSettings {
     'payoutNotificationsEnabled': payoutNotificationsEnabled,
     'hasRatedProject': hasRatedProject,
     'adaptiveSalaryEnabled': adaptiveSalaryEnabled,
+    'designStyle': designStyle.name,
+    'shiftAnimationsEnabled': shiftAnimationsEnabled,
   };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) => AppSettings(
@@ -115,6 +126,11 @@ class AppSettings {
         json['payoutNotificationsEnabled'] as bool? ?? true,
     hasRatedProject: json['hasRatedProject'] as bool? ?? false,
     adaptiveSalaryEnabled: json['adaptiveSalaryEnabled'] as bool? ?? true,
+    designStyle: AppDesignStyle.values.byNameOr(
+      json['designStyle'] as String?,
+      AppDesignStyle.none,
+    ),
+    shiftAnimationsEnabled: json['shiftAnimationsEnabled'] as bool? ?? true,
   );
 }
 
@@ -156,7 +172,10 @@ class Schedule {
   };
 
   factory Schedule.fromJson(Map<String, dynamic> json) => Schedule(
-    type: ScheduleType.values.byNameOr(json['type'] as String?, ScheduleType.twoTwo),
+    type: ScheduleType.values.byNameOr(
+      json['type'] as String?,
+      ScheduleType.twoTwo,
+    ),
     anchorDate:
         DateTime.tryParse(json['anchorDate'] as String? ?? '') ??
         DateTime.now(),
@@ -178,23 +197,28 @@ class PaymentSettings {
     required this.revenuePercent,
     required this.advanceDay,
     required this.salaryDay,
+    this.advancePercent = 30,
   });
 
   final int dailyRateMinor;
   final double revenuePercent;
   final int advanceDay;
   final int salaryDay;
+  final int advancePercent;
+  int get salaryPercent => 100 - advancePercent;
 
   PaymentSettings copyWith({
     int? dailyRateMinor,
     double? revenuePercent,
     int? advanceDay,
     int? salaryDay,
+    int? advancePercent,
   }) => PaymentSettings(
     dailyRateMinor: dailyRateMinor ?? this.dailyRateMinor,
     revenuePercent: revenuePercent ?? this.revenuePercent,
     advanceDay: advanceDay ?? this.advanceDay,
     salaryDay: salaryDay ?? this.salaryDay,
+    advancePercent: advancePercent ?? this.advancePercent,
   );
 
   Map<String, dynamic> toJson() => {
@@ -202,6 +226,7 @@ class PaymentSettings {
     'revenuePercent': revenuePercent,
     'advanceDay': advanceDay,
     'salaryDay': salaryDay,
+    'advancePercent': advancePercent,
   };
 
   factory PaymentSettings.fromJson(Map<String, dynamic> json) =>
@@ -210,6 +235,7 @@ class PaymentSettings {
         revenuePercent: (json['revenuePercent'] as num?)?.toDouble() ?? 5,
         advanceDay: (json['advanceDay'] as num?)?.toInt() ?? 15,
         salaryDay: (json['salaryDay'] as num?)?.toInt() ?? 30,
+        advancePercent: ((json['advancePercent'] as num?)?.toInt() ?? 30).clamp(0, 100),
       );
 }
 
@@ -287,6 +313,7 @@ class Shift {
   final double? customRevenuePercent;
   final int? customDailyRateMinor;
   final int? manualEarningsMinor;
+
   /// Original earnings captured before an adaptive payout recalculation.
   final int? adaptiveEarningsOriginalMinor;
 
@@ -317,12 +344,9 @@ class Shift {
     comment: comment ?? this.comment,
     createdAt: createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
-    customRevenuePercent:
-        customRevenuePercent ?? this.customRevenuePercent,
-    customDailyRateMinor:
-        customDailyRateMinor ?? this.customDailyRateMinor,
-    manualEarningsMinor:
-        manualEarningsMinor ?? this.manualEarningsMinor,
+    customRevenuePercent: customRevenuePercent ?? this.customRevenuePercent,
+    customDailyRateMinor: customDailyRateMinor ?? this.customDailyRateMinor,
+    manualEarningsMinor: manualEarningsMinor ?? this.manualEarningsMinor,
     adaptiveEarningsOriginalMinor: clearAdaptiveEarningsOriginal
         ? null
         : adaptiveEarningsOriginalMinor ?? this.adaptiveEarningsOriginalMinor,
@@ -344,8 +368,7 @@ class Shift {
       'customRevenuePercent': customRevenuePercent,
     if (customDailyRateMinor != null)
       'customDailyRateMinor': customDailyRateMinor,
-    if (manualEarningsMinor != null)
-      'manualEarningsMinor': manualEarningsMinor,
+    if (manualEarningsMinor != null) 'manualEarningsMinor': manualEarningsMinor,
     if (adaptiveEarningsOriginalMinor != null)
       'adaptiveEarningsOriginalMinor': adaptiveEarningsOriginalMinor,
   };
@@ -353,7 +376,10 @@ class Shift {
   factory Shift.fromJson(Map<String, dynamic> json) => Shift(
     id: json['id'] as String,
     date: DateTime.parse(json['date'] as String),
-    kind: ShiftKind.values.byNameOr(json['kind'] as String?, ShiftKind.scheduled),
+    kind: ShiftKind.values.byNameOr(
+      json['kind'] as String?,
+      ShiftKind.scheduled,
+    ),
     actualStart: DateTime.parse(json['actualStart'] as String),
     actualEnd: DateTime.parse(json['actualEnd'] as String),
     colleagueIds: List<String>.from(
@@ -364,12 +390,9 @@ class Shift {
     comment: json['comment'] as String? ?? '',
     createdAt: DateTime.parse(json['createdAt'] as String),
     updatedAt: DateTime.parse(json['updatedAt'] as String),
-    customRevenuePercent:
-        (json['customRevenuePercent'] as num?)?.toDouble(),
-    customDailyRateMinor:
-        (json['customDailyRateMinor'] as num?)?.toInt(),
-    manualEarningsMinor:
-        (json['manualEarningsMinor'] as num?)?.toInt(),
+    customRevenuePercent: (json['customRevenuePercent'] as num?)?.toDouble(),
+    customDailyRateMinor: (json['customDailyRateMinor'] as num?)?.toInt(),
+    manualEarningsMinor: (json['manualEarningsMinor'] as num?)?.toInt(),
     adaptiveEarningsOriginalMinor:
         (json['adaptiveEarningsOriginalMinor'] as num?)?.toInt(),
   );
@@ -423,7 +446,10 @@ class Payout {
   factory Payout.fromJson(Map<String, dynamic> json) => Payout(
     id: json['id'] as String,
     date: DateTime.parse(json['date'] as String),
-    kind: PayoutKind.values.byNameOr(json['kind'] as String?, PayoutKind.advance),
+    kind: PayoutKind.values.byNameOr(
+      json['kind'] as String?,
+      PayoutKind.advance,
+    ),
     amountMinor: (json['amountMinor'] as num?)?.toInt() ?? 0,
     comment: json['comment'] as String? ?? '',
     createdAt: DateTime.parse(json['createdAt'] as String),
@@ -474,8 +500,9 @@ class AppState {
       payment: const PaymentSettings(
         dailyRateMinor: 300000,
         revenuePercent: 5,
-        advanceDay: 15,
-        salaryDay: 30,
+        advanceDay: 30,
+        salaryDay: 15,
+        advancePercent: 30,
       ),
       colleagues: const [],
       shifts: const [],
@@ -535,7 +562,9 @@ class AppState {
           .map((item) => Shift.fromJson(Map<String, dynamic>.from(item as Map)))
           .toList(),
       payouts: (json['payouts'] as List<dynamic>? ?? const [])
-          .map((item) => Payout.fromJson(Map<String, dynamic>.from(item as Map)))
+          .map(
+            (item) => Payout.fromJson(Map<String, dynamic>.from(item as Map)),
+          )
           .toList(),
     );
   }

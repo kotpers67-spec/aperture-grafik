@@ -25,7 +25,7 @@ void main() {
         actualAmountMinor: 450000,
       );
 
-      expect(rate, 450000);
+      expect(rate, 130000);
       final shifts = controller.state.requireValue.shifts;
       expect(shifts.singleWhere((s) => s.id == 'before').earningsMinor, 130000);
       expect(shifts.singleWhere((s) => s.id == 'after').earningsMinor, 375000);
@@ -66,11 +66,11 @@ void main() {
           .toList(),
       firstResult,
     );
-    expect(firstResult, everyElement(112500));
+    expect(firstResult, everyElement(130000));
   });
 
   test(
-    'last salary period recalculation excludes the previous payout date',
+    'late advance reconciles every shift in the full accrual month',
     () async {
       final previousDay = _shift('previous-day', DateTime(2026, 9, 17), 242667);
       final previousPayoutDay = _shift(
@@ -103,15 +103,15 @@ void main() {
         actualAmountMinor: 450000,
       );
 
-      expect(rate, 450000);
+      expect(rate, 130000);
       final shifts = controller.state.requireValue.shifts;
       expect(
         shifts.singleWhere((s) => s.id == 'previous-day').earningsMinor,
-        242667,
+        130000,
       );
       expect(
         shifts.singleWhere((s) => s.id == 'previous-payout').earningsMinor,
-        242667,
+        130000,
       );
       expect(
         shifts.singleWhere((s) => s.id == 'after-payout').earningsMinor,

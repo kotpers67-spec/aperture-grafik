@@ -42,6 +42,63 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
   final ScheduleService _schedule = const ScheduleService();
 
+  static bool shouldRescheduleForStateChange(AppState previous, AppState next) {
+    final a = previous.settings;
+    final b = next.settings;
+    if (a.language != b.language ||
+        a.notificationsEnabled != b.notificationsEnabled ||
+        a.payoutNotificationsEnabled != b.payoutNotificationsEnabled) {
+      return true;
+    }
+
+    final oldSchedule = previous.schedule;
+    final newSchedule = next.schedule;
+    if (oldSchedule.type != newSchedule.type ||
+        oldSchedule.anchorDate != newSchedule.anchorDate ||
+        oldSchedule.start.hour != newSchedule.start.hour ||
+        oldSchedule.start.minute != newSchedule.start.minute ||
+        oldSchedule.end.hour != newSchedule.end.hour ||
+        oldSchedule.end.minute != newSchedule.end.minute ||
+        oldSchedule.weekdays.length != newSchedule.weekdays.length ||
+        !oldSchedule.weekdays.containsAll(newSchedule.weekdays)) {
+      return true;
+    }
+
+    final oldPayment = previous.payment;
+    final newPayment = next.payment;
+    if (oldPayment.advanceDay != newPayment.advanceDay ||
+        oldPayment.salaryDay != newPayment.salaryDay) {
+      return true;
+    }
+
+    if (previous.shifts.length != next.shifts.length ||
+        previous.shifts.any((oldShift) {
+          final newShift = next.shifts
+              .where((shift) => shift.id == oldShift.id)
+              .firstOrNull;
+          return newShift == null ||
+              oldShift.date != newShift.date ||
+              oldShift.actualStart != newShift.actualStart ||
+              oldShift.actualEnd != newShift.actualEnd;
+        })) {
+      return true;
+    }
+
+    if (previous.payouts.length != next.payouts.length ||
+        previous.payouts.any((oldPayout) {
+          final newPayout = next.payouts
+              .where((payout) => payout.id == oldPayout.id)
+              .firstOrNull;
+          return newPayout == null ||
+              oldPayout.date != newPayout.date ||
+              oldPayout.kind != newPayout.kind;
+        })) {
+      return true;
+    }
+
+    return false;
+  }
+
   Future<void> initialize() async {
     tz.initializeTimeZones();
     tz.setLocalLocation(tz.getLocation('Europe/Moscow'));
@@ -144,10 +201,7 @@ class NotificationService {
     int month,
   ) {
     return state.payouts.any(
-      (p) =>
-          p.kind == kind &&
-          p.date.year == year &&
-          p.date.month == month,
+      (p) => p.kind == kind && p.date.year == year && p.date.month == month,
     );
   }
 
@@ -192,12 +246,14 @@ class NotificationService {
           0,
         );
         if (eveTrigger.isAfter(now)) {
-          results.add(PayoutNotificationEvent(
-            kind: kind,
-            type: PayoutNotificationType.eve,
-            payoutDate: payoutDate,
-            triggerTime: eveTrigger,
-          ));
+          results.add(
+            PayoutNotificationEvent(
+              kind: kind,
+              type: PayoutNotificationType.eve,
+              payoutDate: payoutDate,
+              triggerTime: eveTrigger,
+            ),
+          );
         }
 
         // 2. Day-of reminder (10:00 on payout day)
@@ -209,12 +265,14 @@ class NotificationService {
           0,
         );
         if (dayOfTrigger.isAfter(now)) {
-          results.add(PayoutNotificationEvent(
-            kind: kind,
-            type: PayoutNotificationType.dayOf,
-            payoutDate: payoutDate,
-            triggerTime: dayOfTrigger,
-          ));
+          results.add(
+            PayoutNotificationEvent(
+              kind: kind,
+              type: PayoutNotificationType.dayOf,
+              payoutDate: payoutDate,
+              triggerTime: dayOfTrigger,
+            ),
+          );
         }
 
         // 3. Follow-up reminders for subsequent days at 10:00 (up to 4 days after)
@@ -231,13 +289,15 @@ class NotificationService {
           // Only schedule if it's in the future and not unreasonably far
           if (followUpTrigger.isAfter(now) &&
               followUpTrigger.difference(today).inDays <= 180) {
-            results.add(PayoutNotificationEvent(
-              kind: kind,
-              type: PayoutNotificationType.followUp,
-              payoutDate: payoutDate,
-              triggerTime: followUpTrigger,
-              daysOverdue: dayOffset,
-            ));
+            results.add(
+              PayoutNotificationEvent(
+                kind: kind,
+                type: PayoutNotificationType.followUp,
+                payoutDate: payoutDate,
+                triggerTime: followUpTrigger,
+                daysOverdue: dayOffset,
+              ),
+            );
           }
         }
       }
@@ -269,13 +329,9 @@ class NotificationService {
         }
       case PayoutNotificationType.followUp:
         if (event.kind == PayoutKind.advance) {
-          return isRussian
-              ? 'Напоминание об авансе ☕'
-              : 'Advance reminder ☕';
+          return isRussian ? 'Напоминание об авансе ☕' : 'Advance reminder ☕';
         } else {
-          return isRussian
-              ? 'Напоминание о зарплате 💳'
-              : 'Salary reminder 💳';
+          return isRussian ? 'Напоминание о зарплате 💳' : 'Salary reminder 💳';
         }
     }
   }
@@ -444,9 +500,7 @@ class NotificationService {
     required String etaText,
     required bool isRussian,
   }) async {
-    final title = isRussian
-        ? 'Загрузка обновления'
-        : 'Downloading update';
+    final title = isRussian ? 'Загрузка обновления' : 'Downloading update';
     final body = isRussian
         ? '$percent% · Осталось: $etaText'
         : '$percent% · Remaining: $etaText';

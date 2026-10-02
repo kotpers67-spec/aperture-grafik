@@ -186,10 +186,19 @@ class UpdateService {
     final releasedAtStr = json['released_at'] as String?;
     final releasedAt = releasedAtStr != null ? DateTime.tryParse(releasedAtStr) : null;
 
-    // NOTE: direct_asset_url (web UI format) returns 302→403 without auth for package registry.
-    // Always use the public GitLab API URL which returns 200 for public projects without auth.
     final rawVersion = tagName.replaceFirst(RegExp(r'^[vV]'), '');
-    final apkUrl = 'https://gitlab.com/api/v4/projects/$gitlabProject/packages/generic/aperture-grafik/$rawVersion/aperture-grafik.apk';
+    final links = (json['assets'] as Map<String, dynamic>?)?['links'];
+    final apkLink = links is List
+        ? links.whereType<Map<String, dynamic>>().firstWhere(
+            (link) => (link['name'] as String? ?? '')
+                .toLowerCase()
+                .endsWith('.apk'),
+            orElse: () => const <String, dynamic>{},
+          )
+        : const <String, dynamic>{};
+    final apkUrl = (apkLink['direct_asset_url'] as String?) ??
+        (apkLink['url'] as String?) ??
+        'https://gitlab.com/api/v4/projects/$gitlabProject/packages/generic/aperture-grafik/$rawVersion/aperture-grafik.apk';
 
     final remoteSemver = SemVer.parse(tagName);
     final localSemver = SemVer.parse(currentVersion);

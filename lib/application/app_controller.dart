@@ -100,10 +100,11 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
     final now = DateTime.now();
     final restoredShifts = _data.shifts.map((shift) {
       final original = shift.adaptiveEarningsOriginalMinor;
-      final revenue = (shift.revenueMinor *
-              (shift.customRevenuePercent ?? _data.payment.revenuePercent) /
-              100)
-          .round();
+      final revenue =
+          (shift.revenueMinor *
+                  (shift.customRevenuePercent ?? _data.payment.revenuePercent) /
+                  100)
+              .round();
       final normalEarnings = _data.payment.dailyRateMinor + revenue;
       if (original == null) {
         // Older app versions did not retain pre-adjustment values. Recover
@@ -290,18 +291,29 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
       ..sort((a, b) => a.date.compareTo(b.date));
     final idx = allPayouts.indexWhere((p) => p.id == payout.id);
     final prevPayout = idx > 0 ? allPayouts[idx - 1] : null;
-    final periodStart = prevPayout != null
-        ? DateTime(
-            prevPayout.date.year,
-            prevPayout.date.month,
-            prevPayout.date.day,
+    final periodMonth = payout.kind == PayoutKind.advance
+        ? _finance.advanceAccrualMonth(
+            payout.date,
+            advanceDay: _data.payment.advanceDay,
+            salaryDay: _data.payment.salaryDay,
           )
-        : DateTime(0);
-    final periodEnd = DateTime(
-      payout.date.year,
-      payout.date.month,
-      payout.date.day,
-    );
+        : (prevPayout == null
+              ? DateTime(payout.date.year, payout.date.month, 1)
+              : DateTime(
+                  prevPayout.date.year,
+                  prevPayout.date.month,
+                  prevPayout.date.day,
+                ));
+    final periodStart = payout.kind == PayoutKind.advance
+        ? DateTime(
+            periodMonth.year,
+            periodMonth.month,
+            1,
+          ).subtract(const Duration(days: 1))
+        : periodMonth;
+    final periodEnd = payout.kind == PayoutKind.advance
+        ? DateTime(periodMonth.year, periodMonth.month + 1, 0)
+        : DateTime(payout.date.year, payout.date.month, payout.date.day);
 
     final periodShifts = _data.shifts.where((s) {
       final shiftDate = DateTime(s.date.year, s.date.month, s.date.day);
@@ -335,9 +347,12 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
     // Implied total period earnings based on payout type
     final int impliedTotalMinor;
     if (payout.kind == PayoutKind.advance) {
-      // Reconcile this completed period to the actual advance amount. Do not
-      // gross it up by 30%: advances may be arbitrary partial payments.
-      impliedTotalMinor = actualAmountMinor;
+      // The entered advance amount represents the configured share of the
+      // month's total earnings.
+      final share = _data.payment.advancePercent / 100;
+      impliedTotalMinor = share <= 0
+          ? 0
+          : (actualAmountMinor / share).round();
     } else {
       // Salary = total − advances → total = salary + advances in period
       final advancesInPeriod = _data.payouts
@@ -377,7 +392,10 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
         shifts: updatedShifts..sort((a, b) => b.date.compareTo(a.date)),
       ),
     );
-    return (adjustedTotal / included.length).round();
+    return (adjustedTotal / included.length).round().clamp(
+      0,
+      _data.payment.dailyRateMinor,
+    );
   }
 
   Future<void> deletePayout(String id) => _save(

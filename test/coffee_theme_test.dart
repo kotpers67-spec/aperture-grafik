@@ -4,6 +4,7 @@ import 'package:aperture_grafik/presentation/app_shell.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
 void main() {
   test('all saved theme modes resolve to the coffee design system', () {
@@ -23,6 +24,29 @@ void main() {
     expect(
       AppTheme.forMode(AppThemeMode.standard).brightness,
       Brightness.light,
+    );
+  });
+
+  test('all visual styles produce valid, distinct Material 3 themes', () {
+    final themes = AppDesignStyle.values
+        .map(
+          (style) =>
+              AppTheme.forMode(AppThemeMode.standard, designStyle: style),
+        )
+        .toList();
+
+    expect(themes, hasLength(AppDesignStyle.values.length));
+    expect(themes.every((theme) => theme.useMaterial3), isTrue);
+    expect(
+      themes.map((theme) => theme.scaffoldBackgroundColor).toSet(),
+      hasLength(AppDesignStyle.values.length),
+    );
+    expect(
+      AppTheme.forMode(
+        AppThemeMode.standard,
+        designStyle: AppDesignStyle.neon,
+      ).brightness,
+      Brightness.dark,
     );
   });
 
@@ -105,4 +129,37 @@ void main() {
       }
     }
   });
+
+  testWidgets(
+    'calendar month switching stays stable across all visual styles',
+    (tester) async {
+      await initializeDateFormatting();
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final data = AppState.initial().copyWith(
+        settings: AppState.initial().settings.copyWith(
+          onboardingComplete: true,
+          shiftAnimationsEnabled: true,
+        ),
+      );
+
+      for (final style in AppDesignStyle.values) {
+        await tester.pumpWidget(
+          ProviderScope(
+            child: MaterialApp(
+              theme: AppTheme.forMode(AppThemeMode.standard, designStyle: style),
+              home: CalendarPage(data: data),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byIcon(Icons.chevron_right));
+        await tester.pump(const Duration(milliseconds: 120));
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(tester.takeException(), isNull, reason: style.name);
+      }
+    },
+  );
 }

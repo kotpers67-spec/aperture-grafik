@@ -183,8 +183,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           payment: PaymentSettings(
             dailyRateMinor: rate,
             revenuePercent: percent,
-            advanceDay: 15,
-            salaryDay: 30,
+            advanceDay: 30,
+            salaryDay: 15,
+            advancePercent: 30,
           ),
           colleagueNames: _names,
         );
@@ -462,6 +463,8 @@ class HomePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final strings = Strings(data.settings.language);
+    final animateShifts = data.settings.shiftAnimationsEnabled &&
+        !MediaQuery.of(context).disableAnimations;
     final schedule = const ScheduleService();
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -488,8 +491,8 @@ class HomePage extends ConsumerWidget {
             now.isBefore(yesterdayEnd) &&
             yesterdayShift == null;
     final active = (planned &&
-            now.isAfter(starts) &&
-            now.isBefore(ends) &&
+            !now.isBefore(starts) &&
+            !now.isAfter(ends) &&
             existing == null) ||
         isYesterdayOvernightActive;
     final pendingDay = planned && now.isAfter(ends) && existing == null
@@ -542,31 +545,53 @@ class HomePage extends ConsumerWidget {
                 ? (strings.isRu ? 'Итоги дня' : 'Today’s result')
                 : (strings.isRu ? 'Данные смены' : 'Shift details'),
           ),
-          if (completionDate != null)
-            _InlineShiftCompletionForm(
-              data: data,
-              date: completionDate,
-              kind: ShiftKind.scheduled,
-            )
-          else if (existing != null)
-            _SummaryCard(shift: existing, data: data)
-          else
-            FilledButton.icon(
-              onPressed: () => showShiftEditor(
-                context,
-                data: data,
-                date: today,
-                kind: planned ? ShiftKind.scheduled : ShiftKind.extra,
-              ),
-              icon: Icon(
-                planned ? Icons.check_circle_outline : Icons.add_circle_outline,
-              ),
-              label: Text(
-                planned
-                    ? strings.completeDay
-                    : (strings.isRu ? 'Добавить смену' : 'Add shift'),
+          AnimatedSwitcher(
+            duration: animateShifts ? const Duration(milliseconds: 320) : Duration.zero,
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, .04),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
               ),
             ),
+            child: completionDate != null
+                ? _InlineShiftCompletionForm(
+                    key: ValueKey('fill-${completionDate.toIso8601String()}'),
+                    data: data,
+                    date: completionDate,
+                    kind: ShiftKind.scheduled,
+                  )
+                : existing != null
+                    ? _SummaryCard(
+                        key: ValueKey('summary-${existing.id}-${existing.updatedAt}'),
+                        shift: existing,
+                        data: data,
+                      )
+                    : FilledButton.icon(
+                        key: const ValueKey('add-shift-action'),
+                        onPressed: () => showShiftEditor(
+                          context,
+                          data: data,
+                          date: today,
+                          kind: planned ? ShiftKind.scheduled : ShiftKind.extra,
+                        ),
+                        icon: Icon(
+                          planned
+                              ? Icons.check_circle_outline
+                              : Icons.add_circle_outline,
+                        ),
+                        label: Text(
+                          planned
+                              ? strings.completeDay
+                              : (strings.isRu ? 'Добавить смену' : 'Add shift'),
+                        ),
+                      ),
+          ),
           if (recommendation != null) ...[
             const SizedBox(height: 22),
             _SectionTitle(
@@ -605,11 +630,14 @@ class CalendarPage extends ConsumerStatefulWidget {
 
 class _CalendarPageState extends ConsumerState<CalendarPage> {
   late DateTime month = DateTime(DateTime.now().year, DateTime.now().month);
+  int _monthDirection = 1;
 
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
     final strings = Strings(data.settings.language);
+    final animateShifts = data.settings.shiftAnimationsEnabled &&
+        !MediaQuery.of(context).disableAnimations;
     final schedule = const ScheduleService();
     final first = DateTime(month.year, month.month, 1);
     final leading = first.weekday - 1;
@@ -631,8 +659,18 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
           kind: planned ? ShiftKind.scheduled : ShiftKind.extra,
           existing: shift,
         ),
-        child: Center(
-          child: Container(
+        child: AnimatedScale(
+          duration: animateShifts
+              ? const Duration(milliseconds: 260)
+              : Duration.zero,
+          scale: shift == null ? 0.94 : 1,
+          curve: Curves.easeOutBack,
+          child: Center(
+            child: AnimatedContainer(
+              duration: animateShifts
+                  ? const Duration(milliseconds: 280)
+                  : Duration.zero,
+              curve: Curves.easeOutCubic,
             width: 40,
             height: 40,
             alignment: Alignment.center,
@@ -657,6 +695,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                     ? FontWeight.bold
                     : FontWeight.normal,
               ),
+            ),
             ),
           ),
         ),
@@ -692,7 +731,10 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
             children: [
               IconButton(
                 onPressed: () => setState(
-                  () => month = DateTime(month.year, month.month - 1),
+                  () {
+                    _monthDirection = -1;
+                    month = DateTime(month.year, month.month - 1);
+                  },
                 ),
                 icon: const Icon(Icons.chevron_left),
               ),
@@ -709,7 +751,10 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
               ),
               IconButton(
                 onPressed: () => setState(
-                  () => month = DateTime(month.year, month.month + 1),
+                  () {
+                    _monthDirection = 1;
+                    month = DateTime(month.year, month.month + 1);
+                  },
                 ),
                 icon: const Icon(Icons.chevron_right),
               ),
@@ -734,13 +779,32 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                     .toList(),
           ),
           const SizedBox(height: 8),
-          GridView.count(
-            crossAxisCount: 7,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 4,
-            crossAxisSpacing: 0,
-            children: days,
+          AnimatedSwitcher(
+            duration: animateShifts
+                ? const Duration(milliseconds: 300)
+                : Duration.zero,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: Offset(_monthDirection * .08, 0),
+                  end: Offset.zero,
+                ).animate(CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeOutCubic,
+                )),
+                child: child,
+              ),
+            ),
+            child: GridView.count(
+              key: ValueKey('${month.year}-${month.month}'),
+              crossAxisCount: 7,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 4,
+              crossAxisSpacing: 0,
+              children: days,
+            ),
           ),
           const SizedBox(height: 14),
           _CalendarLegend(isRussian: strings.isRu),
@@ -985,9 +1049,26 @@ class ProfilePage extends ConsumerWidget {
           ),
           _SettingsTile(
             icon: Icons.palette_outlined,
-            title: strings.isRu ? 'Дизайн' : 'Design',
+            title: strings.isRu ? 'Цветовая палитра' : 'Color palette',
             subtitle: _themeName(data.settings.themeMode, strings.isRu),
             onTap: () => _selectTheme(context, data, controller),
+          ),
+          _SettingsTile(
+            icon: Icons.auto_awesome_rounded,
+            title: strings.isRu ? 'Стиль оформления' : 'Visual style',
+            subtitle: _designStyleName(data.settings.designStyle, strings.isRu),
+            onTap: () => _selectDesignStyle(context, data, controller),
+          ),
+          _SettingsSwitch(
+            value: data.settings.shiftAnimationsEnabled,
+            onChanged: (value) => controller.updateSettings(
+              data.settings.copyWith(shiftAnimationsEnabled: value),
+            ),
+            icon: Icons.animation_rounded,
+            title: strings.isRu ? 'Анимации смен' : 'Shift animations',
+            subtitle: strings.isRu
+                ? 'Плавное переключение дат и заполнение смен'
+                : 'Animate date changes and completed shifts',
           ),
           _SettingsSwitch(
             value: data.settings.notificationsEnabled,
@@ -2018,13 +2099,17 @@ class _PayoutsSection extends StatelessWidget {
   void _showAdaptiveSalarySheet(BuildContext context, Payout payout) {
     final strings = Strings(data.settings.language);
     final scheme = Theme.of(context).colorScheme;
-    final allPayouts = [...data.payouts]..sort((a, b) => a.date.compareTo(b.date));
-    final idx = allPayouts.indexWhere((p) => p.id == payout.id);
-    final prevPayout = idx > 0 ? allPayouts[idx - 1] : null;
-    final periodStart = prevPayout != null
-        ? DateTime(prevPayout.date.year, prevPayout.date.month, prevPayout.date.day)
-        : DateTime(0);
-    final periodEnd = DateTime(payout.date.year, payout.date.month, payout.date.day);
+    final periodMonth = const FinanceService().advanceAccrualMonth(
+      payout.date,
+      advanceDay: data.payment.advanceDay,
+      salaryDay: data.payment.salaryDay,
+    );
+    final periodStart = DateTime(
+      periodMonth.year,
+      periodMonth.month,
+      1,
+    ).subtract(const Duration(days: 1));
+    final periodEnd = DateTime(periodMonth.year, periodMonth.month + 1, 0);
     final periodShifts = data.shifts
         .where((s) {
           final shiftDate = DateTime(s.date.year, s.date.month, s.date.day);
@@ -2058,7 +2143,7 @@ class _PayoutsSection extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               strings.isRu
-                  ? 'После выплаты аванса укажи фактически полученную сумму. Пересчёт корректирует начисления по $includedCount смен${includedCount == 1 ? "е" : "ам"} с последней выплаты до этого аванса.'
+                  ? 'Аванс — ${data.payment.advancePercent}% от заработка за месяц. Укажи фактически полученную сумму: пересчёт распределит её долю между $includedCount рабочими сменами месяца; обычная дневная ставка останется не выше ${money(data, data.payment.dailyRateMinor)}.'
                   : 'After recording an advance, adjust earnings for $includedCount shifts since the previous payout.',
               style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
             ),
@@ -2747,6 +2832,7 @@ class _MetricCard extends StatelessWidget {
 
 class _InlineShiftCompletionForm extends ConsumerStatefulWidget {
   const _InlineShiftCompletionForm({
+    super.key,
     required this.data,
     required this.date,
     required this.kind,
@@ -3251,7 +3337,7 @@ class _RecommendationAlert extends StatelessWidget {
 }
 
 class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({required this.shift, required this.data});
+  const _SummaryCard({super.key, required this.shift, required this.data});
   final Shift shift;
   final AppState data;
   @override
@@ -3791,6 +3877,81 @@ Future<void> _selectTheme(
   }
 }
 
+Future<void> _selectDesignStyle(
+  BuildContext context,
+  AppState data,
+  AppController controller,
+) async {
+  final ru = data.settings.language == AppLanguage.russian;
+  final result = await showDialog<AppDesignStyle>(
+    context: context,
+    builder: (context) => SimpleDialog(
+      title: Text(ru ? 'Выберите стиль' : 'Choose a visual style'),
+      children: AppDesignStyle.values
+          .map(
+            (style) => SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, style),
+              child: Row(
+                children: [
+                  _DesignStylePreview(style: style),
+                  const SizedBox(width: 14),
+                  Expanded(child: Text(_designStyleName(style, ru))),
+                  if (style == data.settings.designStyle)
+                    const Icon(Icons.check_rounded),
+                ],
+              ),
+            ),
+          )
+          .toList(),
+    ),
+  );
+  if (result != null) {
+    await controller.updateSettings(data.settings.copyWith(designStyle: result));
+  }
+}
+
+class _DesignStylePreview extends StatelessWidget {
+  const _DesignStylePreview({required this.style});
+
+  final AppDesignStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = switch (style) {
+      AppDesignStyle.none => const [Color(0xFF6F4E37), Color(0xFFFFF9F2)],
+      AppDesignStyle.glass => const [Color(0xFF167A9C), Color(0xFFEAF5F7)],
+      AppDesignStyle.neon => const [Color(0xFF68F5E5), Color(0xFF090D19)],
+      AppDesignStyle.minimal => const [Color(0xFF496B58), Color(0xFFF5F5F0)],
+      AppDesignStyle.neomorphic => const [Color(0xFF775E4C), Color(0xFFEAE4DC)],
+    };
+    return Container(
+      width: 48,
+      height: 42,
+      decoration: BoxDecoration(
+        color: colors[1],
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: colors[0].withValues(alpha: .45)),
+      ),
+      child: Center(
+        child: Container(
+          width: 22,
+          height: 22,
+          decoration: BoxDecoration(
+            color: colors[0],
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: colors[0].withValues(alpha: .28),
+                blurRadius: 8,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 Future<void> _showSupport(BuildContext context, bool isRussian) async {
   const endpoints = [
     _SupportAddress(
@@ -4032,6 +4193,9 @@ Future<void> _editPayment(
   final percent = TextEditingController(text: '${data.payment.revenuePercent}');
   final advanceDay = TextEditingController(text: '${data.payment.advanceDay}');
   final salaryDay = TextEditingController(text: '${data.payment.salaryDay}');
+  final advancePercent = TextEditingController(
+    text: '${data.payment.advancePercent}',
+  );
   final result = await showDialog<PaymentSettings>(
     context: context,
     builder: (context) => AlertDialog(
@@ -4075,6 +4239,18 @@ Future<void> _editPayment(
                 helperText: strings.isRu ? 'Число месяца (1–31)' : 'Day of month (1–31)',
               ),
             ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: advancePercent,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: strings.isRu ? 'Аванс от заработка' : 'Advance share',
+                suffixText: '%',
+                helperText: strings.isRu
+                    ? 'Зарплата автоматически: ${100 - data.payment.advancePercent}%'
+                    : 'Salary remainder: ${100 - data.payment.advancePercent}%',
+              ),
+            ),
           ],
         ),
       ),
@@ -4098,6 +4274,9 @@ Future<void> _editPayment(
                     0,
                 advanceDay: parsedAdv.clamp(1, 31),
                 salaryDay: parsedSal.clamp(1, 31),
+                advancePercent: (int.tryParse(advancePercent.text.trim()) ??
+                        data.payment.advancePercent)
+                    .clamp(0, 100),
               ),
             );
           },
@@ -4110,6 +4289,7 @@ Future<void> _editPayment(
   percent.dispose();
   advanceDay.dispose();
   salaryDay.dispose();
+  advancePercent.dispose();
   if (result != null) {
     await controller.updatePayment(result);
   }
@@ -4341,4 +4521,12 @@ String _themeName(AppThemeMode mode, bool ru) => switch (mode) {
   AppThemeMode.laboratory => ru ? 'Молочный латте' : 'Milky latte',
   AppThemeMode.aperture => ru ? 'Карамельный раф' : 'Caramel roast',
   AppThemeMode.chamber => ru ? 'Ночной эспрессо' : 'Night espresso',
+};
+
+String _designStyleName(AppDesignStyle style, bool ru) => switch (style) {
+  AppDesignStyle.none => ru ? 'Кофейная классика' : 'Coffee classic',
+  AppDesignStyle.glass => ru ? 'Хрустальное стекло' : 'Crystal glass',
+  AppDesignStyle.neon => ru ? 'Неоновая ночь' : 'Neon night',
+  AppDesignStyle.minimal => ru ? 'Тихий минимализм' : 'Quiet minimal',
+  AppDesignStyle.neomorphic => ru ? 'Мягкий рельеф' : 'Soft relief',
 };

@@ -35,50 +35,85 @@ void main() {
       );
     });
 
-    test('resolveMonthDay clamps days correctly for leap and standard months', () {
-      expect(
-        NotificationService.resolveMonthDay(2026, 2, 30),
-        DateTime(2026, 2, 28),
-      );
-      expect(
-        NotificationService.resolveMonthDay(2024, 2, 30),
-        DateTime(2024, 2, 29),
-      );
-      expect(
-        NotificationService.resolveMonthDay(2026, 4, 31),
-        DateTime(2026, 4, 30),
-      );
-      expect(
-        NotificationService.resolveMonthDay(2026, 5, 15),
-        DateTime(2026, 5, 15),
-      );
-    });
+    test(
+      'resolveMonthDay clamps days correctly for leap and standard months',
+      () {
+        expect(
+          NotificationService.resolveMonthDay(2026, 2, 30),
+          DateTime(2026, 2, 28),
+        );
+        expect(
+          NotificationService.resolveMonthDay(2024, 2, 30),
+          DateTime(2024, 2, 29),
+        );
+        expect(
+          NotificationService.resolveMonthDay(2026, 4, 31),
+          DateTime(2026, 4, 30),
+        );
+        expect(
+          NotificationService.resolveMonthDay(2026, 5, 15),
+          DateTime(2026, 5, 15),
+        );
+      },
+    );
 
-    test('generates advance eve at 18:00 and advance day at 10:00 when in future', () {
-      final now = DateTime(2026, 5, 10, 12, 0);
-      final events = NotificationService.computeUpcomingPayoutEvents(
-        baseState,
-        now,
-        count: 10,
-      );
+    test(
+      'does not rebuild notification alarms for visual preference changes',
+      () {
+        final changedStyle = baseState.copyWith(
+          settings: baseState.settings.copyWith(
+            designStyle: AppDesignStyle.neon,
+            shiftAnimationsEnabled: false,
+          ),
+        );
+        expect(
+          NotificationService.shouldRescheduleForStateChange(
+            baseState,
+            changedStyle,
+          ),
+          isFalse,
+        );
+        final changedPayoutDate = baseState.copyWith(
+          payment: baseState.payment.copyWith(advanceDay: 30),
+        );
+        expect(
+          NotificationService.shouldRescheduleForStateChange(
+            baseState,
+            changedPayoutDate,
+          ),
+          isTrue,
+        );
+      },
+    );
 
-      // Advance for May 2026 is on 15th
-      final advEve = events.firstWhere(
-        (e) =>
-            e.kind == PayoutKind.advance &&
-            e.type == PayoutNotificationType.eve &&
-            e.payoutDate.month == 5,
-      );
-      expect(advEve.triggerTime, DateTime(2026, 5, 14, 18, 0));
+    test(
+      'generates advance eve at 18:00 and advance day at 10:00 when in future',
+      () {
+        final now = DateTime(2026, 5, 10, 12, 0);
+        final events = NotificationService.computeUpcomingPayoutEvents(
+          baseState,
+          now,
+          count: 10,
+        );
 
-      final advDay = events.firstWhere(
-        (e) =>
-            e.kind == PayoutKind.advance &&
-            e.type == PayoutNotificationType.dayOf &&
-            e.payoutDate.month == 5,
-      );
-      expect(advDay.triggerTime, DateTime(2026, 5, 15, 10, 0));
-    });
+        // Advance for May 2026 is on 15th
+        final advEve = events.firstWhere(
+          (e) =>
+              e.kind == PayoutKind.advance &&
+              e.type == PayoutNotificationType.eve &&
+              e.payoutDate.month == 5,
+        );
+        expect(advEve.triggerTime, DateTime(2026, 5, 14, 18, 0));
+
+        final advDay = events.firstWhere(
+          (e) =>
+              e.kind == PayoutKind.advance &&
+              e.type == PayoutNotificationType.dayOf &&
+              e.payoutDate.month == 5,
+        );
+        expect(advDay.triggerTime, DateTime(2026, 5, 15, 10, 0));
+      },
+    );
 
     test('generates follow-up reminders at 10:00 for past unrecorded payout', () {
       // Current date is May 16 (day after May 15 advance)

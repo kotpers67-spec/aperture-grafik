@@ -29,6 +29,8 @@ class PayoutStatus {
 class FinanceService {
   const FinanceService();
 
+  static const defaultAdvanceShare = 0.30;
+
   int earnings({
     required int revenueMinor,
     required PaymentSettings payment,
@@ -46,8 +48,9 @@ class FinanceService {
 
   DateTime _resolveDate(int year, int month, int targetDay) {
     final maxDay = DateTime(year, month + 1, 0).day;
-    final clampedDay =
-        targetDay > maxDay ? maxDay : (targetDay < 1 ? 1 : targetDay);
+    final clampedDay = targetDay > maxDay
+        ? maxDay
+        : (targetDay < 1 ? 1 : targetDay);
     return DateTime(year, month, clampedDay);
   }
 
@@ -86,7 +89,11 @@ class FinanceService {
 
     // Первая выплата >= сегодня
     final upcoming = candidates.firstWhere(
-      (c) => !c.date.isBefore(today),
+      (c) =>
+          !c.date.isBefore(today) &&
+          !state.payouts.any(
+            (p) => p.kind == c.kind && _sameDay(p.date, c.date),
+          ),
       orElse: () => (
         date: _resolveDate(today.year, today.month + 1, payment.salaryDay),
         kind: PayoutKind.salary,
@@ -95,8 +102,9 @@ class FinanceService {
 
     final nextKind = upcoming.kind;
     final nextDate = upcoming.date;
-    final daysLeft =
-        _sameDay(nextDate, today) ? 0 : nextDate.difference(today).inDays;
+    final daysLeft = _sameDay(nextDate, today)
+        ? 0
+        : nextDate.difference(today).inDays;
 
     // Последняя зафиксированная выплата
     final sortedPayouts = [...state.payouts]
@@ -112,8 +120,11 @@ class FinanceService {
         lastPayout.date.day,
       );
     } else {
-      baselineDate =
-          DateTime(today.year, today.month, 1).subtract(const Duration(days: 1));
+      baselineDate = DateTime(
+        today.year,
+        today.month,
+        1,
+      ).subtract(const Duration(days: 1));
     }
 
     final shiftsSince = state.shifts.where((s) {
@@ -121,48 +132,91 @@ class FinanceService {
       return d.isAfter(baselineDate);
     }).toList();
 
-    final earnedSinceLastPayoutMinor =
-        shiftsSince.fold<int>(0, (sum, s) => sum + s.earningsMinor);
+    final earnedSinceLastPayoutMinor = shiftsSince.fold<int>(
+      0,
+      (sum, s) => sum + s.earningsMinor,
+    );
     final workedHoursInPeriod = _totalHours(shiftsSince);
 
-    // ── Единый период: с последней зарплаты (или с начала месяца если не было) ──
-    final lastSalary = sortedPayouts
-        .where((p) => p.kind == PayoutKind.salary)
-        .firstOrNull;
-    final DateTime periodStart = lastSalary != null
-        ? DateTime(
-            lastSalary.date.year,
-            lastSalary.date.month,
-            lastSalary.date.day,
-          )
-        : DateTime(today.year, today.month, 1).subtract(const Duration(days: 1));
-
-    final periodShifts = state.shifts.where((s) {
-      final d = DateTime(s.date.year, s.date.month, s.date.day);
-      return d.isAfter(periodStart);
+    // Аванс 30-го относится к текущему календарному месяцу. Если его внесли
+    // с задержкой в первые дни следующего месяца, привязываем его к прошлому.
+    final advanceMonth = advanceAccrualMonth(
+      nextDate,
+      advanceDay: payment.advanceDay,
+      salaryDay: payment.salaryDay,
+    );
+    final advanceMonthShifts = state.shifts.where((shift) {
+      final d = shift.date;
+      return d.year == advanceMonth.year &&
+          d.month == advanceMonth.month &&
+          !_day(d).isAfter(today) &&
+          !_day(d).isAfter(nextDate);
     }).toList();
 
-    final totalPeriodEarnings =
-        periodShifts.fold<int>(0, (sum, s) => sum + s.earningsMinor);
-    final advancesPaidInPeriod = state.payouts.where((p) {
-      if (p.kind != PayoutKind.advance) return false;
-      final d = DateTime(p.date.year, p.date.month, p.date.day);
-      return d.isAfter(periodStart);
-    }).fold<int>(0, (sum, p) => sum + p.amountMinor);
+    // Зарплата 15-го закрывает предыдущий месяц за вычетом реально внесённых
+    // авансов и добавляет смены текущего месяца, уже отработанные к этой дате.
+    final isLateMonthAdvance = payment.advanceDay > payment.salaryDay;
+    final salaryMonth = DateTime(
+      nextDate.year,
+      nextDate.month - (isLateMonthAdvance ? 1 : 0),
+      1,
+    );
+    final previousMonthShifts = state.shifts.where(
+      (shift) =>
+          shift.date.year == salaryMonth.year &&
+          shift.date.month == salaryMonth.month,
+    );
+    final previousMonthEarnings = previousMonthShifts.fold<int>(
+      0,
+      (sum, shift) => sum + shift.earningsMinor,
+    );
+    final advancesInPreviousMonth = state.payouts
+        .where((payout) {
+          if (payout.kind != PayoutKind.advance) return false;
+          final accrual = advanceAccrualMonth(
+            payout.date,
+            advanceDay: payment.advanceDay,
+            salaryDay: payment.salaryDay,
+          );
+          return accrual.year == salaryMonth.year &&
+              accrual.month == salaryMonth.month;
+        })
+        .fold<int>(0, (sum, payout) => sum + payout.amountMinor);
+    final currentMonthShifts = state.shifts.where((shift) {
+      final d = _day(shift.date);
+      return d.year == nextDate.year &&
+          d.month == nextDate.month &&
+          !d.isAfter(today) &&
+          !d.isAfter(nextDate);
+    }).toList();
+    final currentMonthEarnings = currentMonthShifts.fold<int>(
+      0,
+      (sum, shift) => sum + shift.earningsMinor,
+    );
+    final salaryRemaining = previousMonthEarnings - advancesInPreviousMonth;
 
-    // ── Расчёт суммы и часов следующей выплаты ─────────────────────────────
     int estimatedNextPayoutMinor;
     double estimatedNextPayoutHours;
 
     if (nextKind == PayoutKind.advance) {
-      // Аванс = 30% от общего заработка за ТОТЖЕ период (с последней зарплаты)
-      estimatedNextPayoutMinor = (totalPeriodEarnings * 0.3).round();
-      estimatedNextPayoutHours = _totalHours(periodShifts) * 0.3;
+      final monthEarnings = advanceMonthShifts.fold<int>(
+        0,
+        (sum, shift) => sum + shift.earningsMinor,
+      );
+      final advanceShare = payment.advancePercent / 100;
+      estimatedNextPayoutMinor = (monthEarnings * advanceShare).round();
+      estimatedNextPayoutHours = _totalHours(advanceMonthShifts) * advanceShare;
     } else {
-      // Зарплата = весь заработок периода минус уже выданные авансы
-      final remaining = totalPeriodEarnings - advancesPaidInPeriod;
-      estimatedNextPayoutMinor = remaining > 0 ? remaining : 0;
-      estimatedNextPayoutHours = _totalHours(periodShifts);
+      if (isLateMonthAdvance) {
+        estimatedNextPayoutMinor =
+            (salaryRemaining > 0 ? salaryRemaining : 0) + currentMonthEarnings;
+        estimatedNextPayoutHours =
+            _totalHours(previousMonthShifts.toList()) +
+            _totalHours(currentMonthShifts);
+      } else {
+        estimatedNextPayoutMinor = salaryRemaining > 0 ? salaryRemaining : 0;
+        estimatedNextPayoutHours = _totalHours(previousMonthShifts.toList());
+      }
     }
 
     return PayoutStatus(
@@ -175,5 +229,19 @@ class FinanceService {
       workedHoursInPeriod: workedHoursInPeriod,
       estimatedNextPayoutHours: estimatedNextPayoutHours,
     );
+  }
+
+  DateTime _day(DateTime value) => DateTime(value.year, value.month, value.day);
+
+  DateTime advanceAccrualMonth(
+    DateTime payoutDate, {
+    required int advanceDay,
+    required int salaryDay,
+  }) {
+    final date = _day(payoutDate);
+    if (advanceDay > salaryDay && date.day <= salaryDay) {
+      return DateTime(date.year, date.month - 1, 1);
+    }
+    return DateTime(date.year, date.month, 1);
   }
 }

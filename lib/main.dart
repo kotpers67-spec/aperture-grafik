@@ -37,6 +37,14 @@ class _ApertureAppState extends ConsumerState<ApertureApp> {
     ) {
       final data = next.asData?.value;
       if (data != null) {
+        final previousData = previous?.asData?.value;
+        if (previousData != null &&
+            !NotificationService.shouldRescheduleForStateChange(
+              previousData,
+              data,
+            )) {
+          return;
+        }
         unawaited(NotificationService.instance.scheduleAll(data));
       }
     }, fireImmediately: true);
@@ -57,7 +65,12 @@ class _ApertureAppState extends ConsumerState<ApertureApp> {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.forMode(
         data?.settings.themeMode ?? AppThemeMode.standard,
+        designStyle: data?.settings.designStyle ?? AppDesignStyle.none,
       ),
+      themeAnimationDuration: data?.settings.shiftAnimationsEnabled == false
+          ? Duration.zero
+          : const Duration(milliseconds: 420),
+      themeAnimationCurve: Curves.easeInOutCubicEmphasized,
       locale: data?.settings.language == AppLanguage.english
           ? const Locale('en')
           : const Locale('ru'),
