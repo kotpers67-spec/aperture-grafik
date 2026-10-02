@@ -4,16 +4,14 @@ stages:
 publish_release:
   stage: release
   image: registry.gitlab.com/gitlab-org/release-cli:latest
-  only:
-    - tags
   script:
-    - echo "Publishing $CI_COMMIT_TAG metadata on GitLab"
-  release:
-    tag_name: "$CI_COMMIT_TAG"
-    name: "Aperture Grafik $CI_COMMIT_TAG"
-    description: "See the GitHub release notes and download the signed Android APK from the linked asset."
-    assets:
-      links:
-        - name: aperture-grafik.apk
-          url: "https://github.com/santiyastudio-lgtm/aperture-grafik/releases/download/$CI_COMMIT_TAG/aperture-grafik.apk"
-          link_type: package
+    - |
+      if [ -z "$CI_COMMIT_TAG" ]; then
+        echo "Branch update; release publishing runs for version tags."
+        exit 0
+      fi
+      release-cli create \
+        --name "Aperture Grafik $CI_COMMIT_TAG" \
+        --tag-name "$CI_COMMIT_TAG" \
+        --description "Signed Android APK and release notes: https://github.com/santiyastudio-lgtm/aperture-grafik/releases/tag/$CI_COMMIT_TAG" \
+        --assets-link "{\"name\":\"aperture-grafik.apk\",\"url\":\"https://github.com/santiyastudio-lgtm/aperture-grafik/releases/download/$CI_COMMIT_TAG/aperture-grafik.apk\",\"link_type\":\"package\"}"
