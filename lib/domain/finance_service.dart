@@ -129,7 +129,8 @@ class FinanceService {
 
     final shiftsSince = state.shifts.where((s) {
       final d = DateTime(s.date.year, s.date.month, s.date.day);
-      return d.isAfter(baselineDate);
+      // A payout recorded for the same day must not discard that day's shift.
+      return !d.isBefore(baselineDate);
     }).toList();
 
     final earnedSinceLastPayoutMinor = shiftsSince.fold<int>(

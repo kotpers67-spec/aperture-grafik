@@ -34,17 +34,11 @@ class SqliteAppRepository implements AppRepository {
     await db.execute(
       'CREATE TABLE IF NOT EXISTS app_state_quarantine (id INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL, saved_at TEXT NOT NULL, error TEXT)',
     );
-    final rows = await db.query(
-      'app_state',
-      where: 'id = ?',
-      whereArgs: [1],
-    );
+    final rows = await db.query('app_state', where: 'id = ?', whereArgs: [1]);
     if (rows.isEmpty) return AppState.initial();
     final raw = rows.single['payload']! as String;
     try {
-      return AppState.fromJson(
-        jsonDecode(raw) as Map<String, dynamic>,
-      );
+      return AppState.fromJson(jsonDecode(raw) as Map<String, dynamic>);
     } catch (error) {
       // Quarantine corrupted payload to prevent silent permanent destruction
       try {
@@ -54,7 +48,9 @@ class SqliteAppRepository implements AppRepository {
           'error': error.toString(),
         });
       } catch (_) {}
-      return AppState.initial();
+      // Keep the original row in place and fail startup so it cannot be
+      // overwritten by an initial state before the user recovers their data.
+      throw FormatException('Saved app data is corrupted: $error');
     }
   }
 

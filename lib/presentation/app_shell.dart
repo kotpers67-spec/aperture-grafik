@@ -50,7 +50,7 @@ class _AppShellState extends ConsumerState<AppShell> {
       try {
         packageInfo = await PackageInfo.fromPlatform();
       } catch (_) {}
-      final currentVersion = packageInfo?.version ?? '0.3.5';
+      final currentVersion = packageInfo?.version ?? '0.3.8';
 
       const updateService = UpdateService();
       final release = await updateService.checkForUpdates(currentVersion: currentVersion);
@@ -1193,7 +1193,7 @@ Future<void> _handleCheckUpdates(BuildContext context, Strings strings) async {
   try {
     packageInfo = await PackageInfo.fromPlatform();
   } catch (_) {}
-  final currentVersion = packageInfo?.version ?? '0.3.5';
+  final currentVersion = packageInfo?.version ?? '0.3.8';
 
   if (!context.mounted) return;
   ScaffoldMessenger.of(context).showSnackBar(

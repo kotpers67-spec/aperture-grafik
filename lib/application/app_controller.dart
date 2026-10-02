@@ -99,29 +99,18 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
 
     final now = DateTime.now();
     final restoredShifts = _data.shifts.map((shift) {
-      final original = shift.adaptiveEarningsOriginalMinor;
       final revenue =
           (shift.revenueMinor *
                   (shift.customRevenuePercent ?? _data.payment.revenuePercent) /
                   100)
               .round();
-      final normalEarnings = _data.payment.dailyRateMinor + revenue;
-      if (original == null) {
-        // Older app versions did not retain adjustment metadata. Normalize
-        // every regular shift to the current configured daily rate when the
-        // feature is disabled.
-        if (shift.manualEarningsMinor != null ||
-            shift.customDailyRateMinor != null) {
-          return shift;
-        }
-        return shift.copyWith(
-          earningsMinor: normalEarnings,
-          updatedAt: now,
-          clearAdaptiveEarningsOriginal: true,
-        );
-      }
+      // A custom rate/revenue share belongs to the shift and must survive
+      // disabling adaptive salary. Manual earnings are never reconciled.
+      if (shift.manualEarningsMinor != null) return shift;
+      final dailyRate =
+          shift.customDailyRateMinor ?? _data.payment.dailyRateMinor;
       return shift.copyWith(
-        earningsMinor: normalEarnings,
+        earningsMinor: dailyRate + revenue,
         updatedAt: now,
         clearAdaptiveEarningsOriginal: true,
       );
@@ -353,9 +342,7 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
       // The entered advance amount represents the configured share of the
       // month's total earnings.
       final share = _data.payment.advancePercent / 100;
-      impliedTotalMinor = share <= 0
-          ? 0
-          : (actualAmountMinor / share).round();
+      impliedTotalMinor = share <= 0 ? 0 : (actualAmountMinor / share).round();
     } else {
       // Salary = total − advances → total = salary + advances in period
       final advancesInPeriod = _data.payouts
@@ -374,11 +361,9 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
     final now = DateTime.now();
     final updatedIncluded = included.map((s) {
       final rev = (s.revenueMinor * revenuePercent / 100).round();
-      // A reconciliation may lower an erroneous historical rate, but must
-      // never inflate shifts beyond the configured daily rate.
-      final configuredRate =
-          s.customDailyRateMinor ?? _data.payment.dailyRateMinor;
-      final reconciledRate = reconciledPeriodRate.clamp(0, configuredRate);
+      // The entered payout is the source of truth for the reconciled rate;
+      // do not cap it at the ordinary configured daily rate.
+      final reconciledRate = reconciledPeriodRate;
       return s.copyWith(
         earningsMinor: reconciledRate + rev,
         updatedAt: now,
@@ -395,10 +380,7 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
         shifts: updatedShifts..sort((a, b) => b.date.compareTo(a.date)),
       ),
     );
-    return (adjustedTotal / included.length).round().clamp(
-      0,
-      _data.payment.dailyRateMinor,
-    );
+    return reconciledPeriodRate.clamp(0, _data.payment.dailyRateMinor);
   }
 
   Future<void> deletePayout(String id) => _save(

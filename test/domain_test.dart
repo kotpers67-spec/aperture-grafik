@@ -47,19 +47,22 @@ void main() {
     expect(service.earnings(revenueMinor: 5000000, payment: payment), 550000);
   });
 
-  test('payment settings default advance to 30 percent and roundtrip custom share', () {
-    const defaults = PaymentSettings(
-      dailyRateMinor: 130000,
-      revenuePercent: 0,
-      advanceDay: 30,
-      salaryDay: 15,
-    );
-    expect(defaults.advancePercent, 30);
-    expect(defaults.salaryPercent, 70);
-    final custom = defaults.copyWith(advancePercent: 40);
-    expect(PaymentSettings.fromJson(custom.toJson()).advancePercent, 40);
-    expect(PaymentSettings.fromJson(custom.toJson()).salaryPercent, 60);
-  });
+  test(
+    'payment settings default advance to 30 percent and roundtrip custom share',
+    () {
+      const defaults = PaymentSettings(
+        dailyRateMinor: 130000,
+        revenuePercent: 0,
+        advanceDay: 30,
+        salaryDay: 15,
+      );
+      expect(defaults.advancePercent, 30);
+      expect(defaults.salaryPercent, 70);
+      final custom = defaults.copyWith(advancePercent: 40);
+      expect(PaymentSettings.fromJson(custom.toJson()).advancePercent, 40);
+      expect(PaymentSettings.fromJson(custom.toJson()).salaryPercent, 60);
+    },
+  );
 
   test('visual and motion preferences survive backup serialization', () {
     const settings = AppSettings(
@@ -288,6 +291,37 @@ void main() {
         expect(status.estimatedNextPayoutMinor, 1000000);
       },
     );
+
+    test('includes a shift recorded on the last payout day', () {
+      final payoutDate = DateTime(2026, 7, 15);
+      final payout = Payout(
+        id: 'same-day-payout',
+        date: payoutDate,
+        kind: PayoutKind.advance,
+        amountMinor: 390000,
+        comment: '',
+        createdAt: payoutDate,
+        updatedAt: payoutDate,
+      );
+      final sameDayShift = _shiftWithEarnings(payoutDate, 130000);
+      final state = AppState.initial().copyWith(
+        payment: const PaymentSettings(
+          dailyRateMinor: 130000,
+          revenuePercent: 0,
+          advanceDay: 30,
+          salaryDay: 15,
+        ),
+        shifts: [sameDayShift],
+        payouts: [payout],
+      );
+
+      final status = finance.calculatePayoutStatus(
+        state: state,
+        now: DateTime(2026, 7, 16),
+      );
+
+      expect(status.earnedSinceLastPayoutMinor, 130000);
+    });
 
     test('Payout JSON serialization and AppState roundtrip', () {
       final payout = Payout(

@@ -5,7 +5,7 @@ import 'package:aperture_grafik/domain/models.dart';
 
 void main() {
   test(
-    'first payout recalculation only touches shifts before that payout',
+    'advance recalculation applies payout amount and configured 30 percent share',
     () async {
       final before = _shift('before', DateTime(2026, 9, 25), 375000);
       final after = _shift('after', DateTime(2026, 10, 2), 375000);
@@ -22,12 +22,15 @@ void main() {
 
       final rate = await controller.recalculateShiftsForPayout(
         payout: payout,
-        actualAmountMinor: 450000,
+        actualAmountMinor: 390000,
       );
 
       expect(rate, 130000);
       final shifts = controller.state.requireValue.shifts;
-      expect(shifts.singleWhere((s) => s.id == 'before').earningsMinor, 130000);
+      expect(
+        shifts.singleWhere((s) => s.id == 'before').earningsMinor,
+        1300000,
+      );
       expect(shifts.singleWhere((s) => s.id == 'after').earningsMinor, 375000);
     },
   );
@@ -50,14 +53,14 @@ void main() {
 
     await controller.recalculateShiftsForPayout(
       payout: payout,
-      actualAmountMinor: 450000,
+      actualAmountMinor: 390000,
     );
     final firstResult = controller.state.requireValue.shifts
         .map((shift) => shift.earningsMinor)
         .toList();
     await controller.recalculateShiftsForPayout(
       payout: payout,
-      actualAmountMinor: 450000,
+      actualAmountMinor: 390000,
     );
 
     expect(
@@ -66,11 +69,11 @@ void main() {
           .toList(),
       firstResult,
     );
-    expect(firstResult, everyElement(130000));
+    expect(firstResult, everyElement(325000));
   });
 
   test(
-    'late advance reconciles every shift in the full accrual month',
+    'late advance reconciliation uses actual payout for the full accrual month',
     () async {
       final previousDay = _shift('previous-day', DateTime(2026, 9, 17), 242667);
       final previousPayoutDay = _shift(
@@ -100,7 +103,7 @@ void main() {
 
       final rate = await controller.recalculateShiftsForPayout(
         payout: payout,
-        actualAmountMinor: 450000,
+        actualAmountMinor: 117000,
       );
 
       expect(rate, 130000);
@@ -120,66 +123,96 @@ void main() {
     },
   );
 
-  test('disabling adaptive salary restores the configured daily rate', () async {
-    final shift = _shift('adjusted', DateTime(2026, 9, 20), 375000);
-    final payout = _payout(
-      'advance',
-      DateTime(2026, 10, 1),
-      PayoutKind.advance,
-    );
-    final repository = _MemoryRepository(
-      _state(shifts: [shift], payouts: [payout]),
-    );
-    final controller = AppController(repository);
-    await controller.initialize();
-    await controller.recalculateShiftsForPayout(
-      payout: payout,
-      actualAmountMinor: 130000,
-    );
+  test(
+    'disabling adaptive salary restores shift custom rate and revenue share',
+    () async {
+      final shift = _shift('adjusted', DateTime(2026, 9, 20), 375000).copyWith(
+        customDailyRateMinor: 200000,
+        customRevenuePercent: 10,
+        revenueMinor: 50000,
+      );
+      final payout = _payout(
+        'advance',
+        DateTime(2026, 10, 1),
+        PayoutKind.advance,
+      );
+      final repository = _MemoryRepository(
+        _state(shifts: [shift], payouts: [payout]),
+      );
+      final controller = AppController(repository);
+      await controller.initialize();
+      await controller.updateSettings(
+        controller.state.requireValue.settings.copyWith(
+          adaptiveSalaryEnabled: false,
+        ),
+      );
 
-    expect(controller.state.requireValue.shifts.single.earningsMinor, 130000);
-    expect(
-      controller.state.requireValue.shifts.single.adaptiveEarningsOriginalMinor,
-      375000,
-    );
+      expect(controller.state.requireValue.shifts.single.earningsMinor, 205000);
+      expect(
+        controller
+            .state
+            .requireValue
+            .shifts
+            .single
+            .adaptiveEarningsOriginalMinor,
+        isNull,
+      );
+    },
+  );
 
-    await controller.updateSettings(
-      controller.state.requireValue.settings.copyWith(
-        adaptiveSalaryEnabled: false,
-      ),
-    );
+  test(
+    'disabling adaptive salary restores configured rate after a decrease',
+    () async {
+      final date = DateTime(2026, 9, 20);
+      final shift = _shift(
+        'lowered',
+        date,
+        70000,
+      ).copyWith(adaptiveEarningsOriginalMinor: 100000);
+      final state = _state(shifts: [shift], payouts: const []);
+      final repository = _MemoryRepository(
+        state.copyWith(
+          settings: state.settings.copyWith(adaptiveSalaryEnabled: true),
+        ),
+      );
+      final controller = AppController(repository);
+      await controller.initialize();
 
-    expect(controller.state.requireValue.shifts.single.earningsMinor, 130000);
-    expect(
-      controller.state.requireValue.shifts.single.adaptiveEarningsOriginalMinor,
-      isNull,
-    );
-  });
+      await controller.updateSettings(
+        controller.state.requireValue.settings.copyWith(
+          adaptiveSalaryEnabled: false,
+        ),
+      );
 
-  test('disabling adaptive salary restores configured rate after a decrease', () async {
-    final date = DateTime(2026, 9, 20);
-    final shift = _shift('lowered', date, 70000).copyWith(
-      adaptiveEarningsOriginalMinor: 100000,
-    );
-    final state = _state(shifts: [shift], payouts: const []);
-    final repository = _MemoryRepository(
-      state.copyWith(
-        settings: state.settings.copyWith(adaptiveSalaryEnabled: true),
-      ),
-    );
-    final controller = AppController(repository);
-    await controller.initialize();
+      final restored = controller.state.requireValue.shifts.single;
+      expect(restored.earningsMinor, 130000);
+      expect(restored.adaptiveEarningsOriginalMinor, isNull);
+    },
+  );
 
-    await controller.updateSettings(
-      controller.state.requireValue.settings.copyWith(
-        adaptiveSalaryEnabled: false,
-      ),
-    );
+  test(
+    'disabling adaptive salary preserves manually entered shift earnings',
+    () async {
+      final date = DateTime(2026, 9, 20);
+      final manual = _shift('manual', date, 210000).copyWith(
+        manualEarningsMinor: 210000,
+        adaptiveEarningsOriginalMinor: 100000,
+      );
+      final state = _state(shifts: [manual], payouts: const []);
+      final controller = AppController(_MemoryRepository(state));
+      await controller.initialize();
 
-    final restored = controller.state.requireValue.shifts.single;
-    expect(restored.earningsMinor, 130000);
-    expect(restored.adaptiveEarningsOriginalMinor, isNull);
-  });
+      await controller.updateSettings(
+        controller.state.requireValue.settings.copyWith(
+          adaptiveSalaryEnabled: false,
+        ),
+      );
+
+      final restored = controller.state.requireValue.shifts.single;
+      expect(restored.earningsMinor, 210000);
+      expect(restored.adaptiveEarningsOriginalMinor, 100000);
+    },
+  );
 }
 
 Shift _shift(String id, DateTime date, int earningsMinor) => Shift(
