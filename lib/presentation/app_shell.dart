@@ -50,7 +50,7 @@ class _AppShellState extends ConsumerState<AppShell> {
       try {
         packageInfo = await PackageInfo.fromPlatform();
       } catch (_) {}
-      final currentVersion = packageInfo?.version ?? '0.3.1';
+      final currentVersion = packageInfo?.version ?? '0.3.3';
 
       const updateService = UpdateService();
       final release = await updateService.checkForUpdates(currentVersion: currentVersion);
@@ -1087,11 +1087,19 @@ class ProfilePage extends ConsumerWidget {
           ),
           const SizedBox(height: 18),
           _SectionTitle(strings.isRu ? 'О приложении' : 'About'),
-          _SettingsTile(
-            icon: Icons.system_update_rounded,
-            title: strings.checkUpdates,
-            subtitle: 'Aperture Grafik v0.3.0',
-            onTap: () => _handleCheckUpdates(context, strings),
+          FutureBuilder<PackageInfo>(
+            future: PackageInfo.fromPlatform(),
+            builder: (context, snap) {
+              final ver = snap.hasData
+                  ? 'Aperture Grafik ${displayVersion(snap.data!.version)}'
+                  : 'Aperture Grafik';
+              return _SettingsTile(
+                icon: Icons.system_update_rounded,
+                title: strings.checkUpdates,
+                subtitle: ver,
+                onTap: () => _handleCheckUpdates(context, strings),
+              );
+            },
           ),
         ],
       ),
@@ -1136,7 +1144,7 @@ Future<void> _handleCheckUpdates(BuildContext context, Strings strings) async {
   if (release == null || !release.isNewer) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('${strings.appUpToDate} (v$currentVersion)'),
+        content: Text('${strings.appUpToDate} (v${displayVersion(currentVersion)})'),
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -1169,7 +1177,7 @@ Future<void> _promptUpdate(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '${strings.currentVersion}: v$currentVersion\n${strings.newVersion}: ${release.version}${release.displaySize.isNotEmpty ? ' (${release.displaySize})' : ''}',
+              '${strings.currentVersion}: v${displayVersion(currentVersion)}\n${strings.newVersion}: v${displayVersion(release.version)}${release.displaySize.isNotEmpty ? ' (${release.displaySize})' : ''}',
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
             if (release.notes.isNotEmpty) ...[
@@ -4272,6 +4280,16 @@ bool _sameDay(DateTime left, DateTime right) =>
     left.year == right.year &&
     left.month == right.month &&
     left.day == right.day;
+/// "0.3.3+9" → "3.3"  |  "1.2.0" → "1.2.0"
+String displayVersion(String raw) {
+  final v = raw.split('+').first; // strip build number
+  final parts = v.split('.');
+  if (parts.length >= 3 && parts[0] == '0') {
+    return '${parts[1]}.${parts[2]}';
+  }
+  return v;
+}
+
 String money(AppState data, int minor) => NumberFormat.currency(
   locale: data.settings.language == AppLanguage.russian ? 'ru_RU' : 'en_US',
   symbol: '₽',
