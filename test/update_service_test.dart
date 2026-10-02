@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -176,7 +177,7 @@ void main() {
       },
     );
 
-    test('uses GitHub Releases as the only update source', () async {
+    test('uses GitHub release when available and checks GitLab too', () async {
       const githubJson = '''
       {
         "tag_name": "v0.3.1",
@@ -219,8 +220,67 @@ void main() {
         release.downloadUrl,
         'https://github.com/santiyastudio-lgtm/aperture-grafik/releases/download/v0.3.1/aperture-grafik.apk',
       );
-      expect(requestedHosts, ['api.github.com']);
+      expect(requestedHosts, containsAll(['api.github.com', 'gitlab.com']));
     });
+
+    test(
+      'falls back to GitLab release metadata when GitHub is unavailable',
+      () async {
+        final requestedUrls = <Uri>[];
+        final client = MockClient((request) async {
+          requestedUrls.add(request.url);
+          if (request.url.host == 'api.github.com') {
+            return http.Response('{"message":"Not Found"}', 404);
+          }
+          if (request.url.host == 'gitlab.com') {
+            return http.Response(
+              jsonEncode({
+                'tag_name': 'v0.3.9',
+                'description': 'GitLab release notes',
+                'released_at': '2026-10-02T16:00:02Z',
+                'assets': {
+                  'links': [
+                    {
+                      'name': 'aperture-grafik.apk',
+                      'url': 'https://gitlab.com/example/aperture-grafik.apk',
+                      'direct_asset_url':
+                          'https://gitlab.com/example/aperture-grafik.apk',
+                    },
+                  ],
+                },
+              }),
+              200,
+              headers: {'content-type': 'application/json'},
+            );
+          }
+          return http.Response('', 404);
+        });
+
+        const service = UpdateService();
+        final release = await service.checkForUpdates(
+          currentVersion: '0.3.8',
+          client: client,
+        );
+
+        expect(release, isNotNull);
+        expect(release!.isNewer, isTrue);
+        expect(release.tag, 'v0.3.9');
+        expect(
+          release.downloadUrl,
+          'https://gitlab.com/example/aperture-grafik.apk',
+        );
+        expect(
+          release.alternateDownloadUrls,
+          contains(
+            'https://gitlab.com/api/v4/projects/santiyastudio%2Faperture-grafik/packages/generic/aperture-grafik/0.3.9/aperture-grafik.apk',
+          ),
+        );
+        expect(
+          requestedUrls.map((url) => url.host),
+          containsAll(['api.github.com', 'gitlab.com']),
+        );
+      },
+    );
   });
 
   group('UpdateService downloadApk streaming & errors', () {

@@ -1486,27 +1486,47 @@ Future<void> _promptUpdate(
     final targetPath = await updateService.getLocalApkPath();
     var lastNotifPercent = -5;
 
-    await for (final progress in updateService.downloadApk(
-      downloadUrl: release.downloadUrl,
-      targetPath: targetPath,
-    )) {
-      progressNotifier.value = progress;
-      final percent = progress.fraction >= 0
-          ? (progress.fraction * 100).toInt().clamp(0, 100)
-          : 0;
+    Object? lastDownloadError;
+    var downloaded = false;
+    final downloadUrls = [
+      release.downloadUrl,
+      ...release.alternateDownloadUrls,
+    ];
+    for (final downloadUrl in downloadUrls) {
+      try {
+        await for (final progress in updateService.downloadApk(
+          downloadUrl: downloadUrl,
+          targetPath: targetPath,
+        )) {
+          progressNotifier.value = progress;
+          final percent = progress.fraction >= 0
+              ? (progress.fraction * 100).toInt().clamp(0, 100)
+              : 0;
 
-      // Update background notification every 5%
-      if (percent - lastNotifPercent >= 5 || percent == 100) {
-        lastNotifPercent = percent;
-        final eta = progress.etaString(strings.isRu);
-        await NotificationService.instance.showDownloadProgress(
-          percent: percent,
-          etaText: eta.isNotEmpty
-              ? eta
-              : (strings.isRu ? 'рассчитывается...' : 'calculating...'),
-          isRussian: strings.isRu,
-        );
+          if (percent - lastNotifPercent >= 5 || percent == 100) {
+            lastNotifPercent = percent;
+            final eta = progress.etaString(strings.isRu);
+            await NotificationService.instance.showDownloadProgress(
+              percent: percent,
+              etaText: eta.isNotEmpty
+                  ? eta
+                  : (strings.isRu ? 'рассчитывается...' : 'calculating...'),
+              isRussian: strings.isRu,
+            );
+          }
+        }
+        downloaded = true;
+        break;
+      } catch (error) {
+        lastDownloadError = error;
       }
+    }
+    if (!downloaded) {
+      throw HttpException(
+        strings.isRu
+            ? 'Не удалось скачать APK ни с GitHub, ни с GitLab: $lastDownloadError'
+            : 'Could not download the APK from GitHub or GitLab: $lastDownloadError',
+      );
     }
 
     progressTitle.value = strings.isRu

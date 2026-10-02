@@ -11,6 +11,7 @@ class AppReleaseInfo {
     required this.version,
     required this.notes,
     required this.downloadUrl,
+    this.alternateDownloadUrls = const [],
     this.sizeBytes,
     this.publishedAt,
     this.isNewer = false,
@@ -20,6 +21,9 @@ class AppReleaseInfo {
   final String version;
   final String notes;
   final String downloadUrl;
+
+  /// Other public mirrors for the same APK, in fallback order.
+  final List<String> alternateDownloadUrls;
   final int? sizeBytes;
   final DateTime? publishedAt;
   final bool isNewer;
@@ -93,11 +97,30 @@ class SemVer {
   String toString() => '$major.$minor.$patch${build > 0 ? '+$build' : ''}';
 }
 
+class _ReleaseCandidate {
+  const _ReleaseCandidate({
+    required this.tag,
+    required this.version,
+    required this.notes,
+    required this.downloadUrl,
+    this.sizeBytes,
+    this.publishedAt,
+  });
+
+  final String tag;
+  final String version;
+  final String notes;
+  final String downloadUrl;
+  final int? sizeBytes;
+  final DateTime? publishedAt;
+}
+
 class UpdateService {
   const UpdateService();
 
-  // GitHub Releases is the single source of app updates.
   static const String githubRepo = 'santiyastudio-lgtm/aperture-grafik';
+  static const String gitlabProjectApi =
+      'https://gitlab.com/api/v4/projects/santiyastudio%2Faperture-grafik';
 
   Future<AppReleaseInfo?> checkForUpdates({
     required String currentVersion,
@@ -105,28 +128,43 @@ class UpdateService {
   }) async {
     final httpClient = client ?? http.Client();
     try {
-      try {
-        final uri = Uri.parse(
-          'https://api.github.com/repos/$githubRepo/releases/latest',
-        );
-        final response = await httpClient
-            .get(
-              uri,
-              headers: {
-                'Accept': 'application/vnd.github.v3+json',
-                'User-Agent': 'ApertureGrafik-Updater',
-              },
-            )
-            .timeout(const Duration(seconds: 8));
+      // Query both services: one can be unavailable or return a private/404
+      // response while the other still has the public release.
+      final results = await Future.wait([
+        _fetchGithubRelease(httpClient),
+        _fetchGitlabRelease(httpClient),
+      ]);
+      final releases = results.whereType<_ReleaseCandidate>().toList();
+      if (releases.isEmpty) return null;
+      releases.sort((a, b) {
+        final aVersion = SemVer.parse(a.tag);
+        final bVersion = SemVer.parse(b.tag);
+        if (aVersion.isNewerThan(bVersion)) return -1;
+        if (bVersion.isNewerThan(aVersion)) return 1;
+        return 0;
+      });
 
-        if (response.statusCode == 200) {
-          final json = jsonDecode(response.body) as Map<String, dynamic>;
-          final release = _parseGithubRelease(json, currentVersion);
-          if (release != null) return release;
-        }
-      } catch (_) {}
-
-      return null;
+      final latest = releases.first;
+      final sameVersionMirrors = releases
+          .where((candidate) => candidate.tag == latest.tag)
+          .map((candidate) => candidate.downloadUrl)
+          .where((url) => url.isNotEmpty && url != latest.downloadUrl)
+          .toList();
+      return AppReleaseInfo(
+        tag: latest.tag,
+        version: latest.version,
+        notes: latest.notes,
+        downloadUrl: latest.downloadUrl,
+        alternateDownloadUrls: {
+          ...sameVersionMirrors,
+          ..._defaultMirrorUrls(latest.tag, latest.downloadUrl),
+        }.toList(growable: false),
+        sizeBytes: latest.sizeBytes,
+        publishedAt: latest.publishedAt,
+        isNewer: SemVer.parse(
+          latest.version,
+        ).isNewerThan(SemVer.parse(currentVersion)),
+      );
     } finally {
       if (client == null) {
         httpClient.close();
@@ -134,10 +172,81 @@ class UpdateService {
     }
   }
 
-  AppReleaseInfo? _parseGithubRelease(
-    Map<String, dynamic> json,
-    String currentVersion,
-  ) {
+  Future<_ReleaseCandidate?> _fetchGithubRelease(http.Client client) async {
+    try {
+      final response = await client
+          .get(
+            Uri.parse(
+              'https://api.github.com/repos/$githubRepo/releases/latest',
+            ),
+            headers: {
+              'Accept': 'application/vnd.github.v3+json',
+              'User-Agent': 'ApertureGrafik-Updater',
+            },
+          )
+          .timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return null;
+      return _parseGithubRelease(
+        jsonDecode(response.body) as Map<String, dynamic>,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<_ReleaseCandidate?> _fetchGitlabRelease(http.Client client) async {
+    try {
+      final response = await client
+          .get(
+            Uri.parse('$gitlabProjectApi/releases/permalink/latest'),
+            headers: {'User-Agent': 'ApertureGrafik-Updater'},
+          )
+          .timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return null;
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      final tag = json['tag_name'] as String? ?? '';
+      if (tag.isEmpty) return null;
+      final assets = json['assets'] as Map<String, dynamic>? ?? const {};
+      final links = assets['links'] as List<dynamic>? ?? const [];
+      String? apkUrl;
+      int? size;
+      for (final item in links) {
+        if (item is Map<String, dynamic> &&
+            ((item['name'] as String? ?? '').toLowerCase().endsWith('.apk') ||
+                (item['url'] as String? ?? '').toLowerCase().endsWith(
+                  '.apk',
+                ))) {
+          apkUrl =
+              item['direct_asset_url'] as String? ?? item['url'] as String?;
+          size = (item['size'] as num?)?.toInt();
+          break;
+        }
+      }
+      apkUrl ??= _gitlabPackageApkUrl(tag);
+      return _ReleaseCandidate(
+        tag: tag,
+        version: SemVer.parse(tag).toString(),
+        notes: json['description'] as String? ?? '',
+        downloadUrl: apkUrl,
+        sizeBytes: size,
+        publishedAt: DateTime.tryParse(
+          json['released_at'] as String? ?? json['created_at'] as String? ?? '',
+        ),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _gitlabPackageApkUrl(String tag) =>
+      '$gitlabProjectApi/packages/generic/aperture-grafik/${SemVer.parse(tag)}/aperture-grafik.apk';
+
+  List<String> _defaultMirrorUrls(String tag, String primaryUrl) => [
+    'https://github.com/$githubRepo/releases/download/$tag/aperture-grafik.apk',
+    _gitlabPackageApkUrl(tag),
+  ].where((url) => url != primaryUrl).toList();
+
+  _ReleaseCandidate? _parseGithubRelease(Map<String, dynamic> json) {
     final tagName = json['tag_name'] as String? ?? '';
     final body = json['body'] as String? ?? '';
     final publishedAtStr = json['published_at'] as String?;
@@ -165,18 +274,15 @@ class UpdateService {
           'https://github.com/$githubRepo/releases/download/$tagName/aperture-grafik.apk';
     }
 
+    if (tagName.isEmpty) return null;
     final remoteSemver = SemVer.parse(tagName);
-    final localSemver = SemVer.parse(currentVersion);
-    final isNewer = remoteSemver.isNewerThan(localSemver);
-
-    return AppReleaseInfo(
+    return _ReleaseCandidate(
       tag: tagName,
       version: remoteSemver.toString(),
       notes: body,
       downloadUrl: apkUrl,
       sizeBytes: apkSize,
       publishedAt: publishedAt,
-      isNewer: isNewer,
     );
   }
 
