@@ -244,44 +244,28 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
     );
   }
 
-  /// Recalculates earningsMinor for all "normal" shifts in the payout's period
-  /// based on the actual received amount. Excluded: shifts with manualEarningsMinor
-  /// or customDailyRateMinor set (those are already custom).
-  Future<void> recalculateShiftsForPayout({
+  /// Recalculates earningsMinor for all "normal" shifts in the payout period.
+  /// ADVANCE: implied total = actual / 0.3 so salary correctly shows 70%.
+  /// SALARY:  implied total = actual + advances paid in same period.
+  /// Returns new daily rate minor units for UI display.
+  Future<int> recalculateShiftsForPayout({
     required Payout payout,
     required int actualAmountMinor,
   }) async {
-    final allPayouts = [..._data.payouts]
-      ..sort((a, b) => a.date.compareTo(b.date));
-
-    // Period: from previous payout date (exclusive) to this payout date (inclusive)
+    final allPayouts = [..._data.payouts]..sort((a, b) => a.date.compareTo(b.date));
     final idx = allPayouts.indexWhere((p) => p.id == payout.id);
     final prevPayout = idx > 0 ? allPayouts[idx - 1] : null;
     final periodStart = prevPayout != null
-        ? DateTime(
-            prevPayout.date.year,
-            prevPayout.date.month,
-            prevPayout.date.day,
-          )
+        ? DateTime(prevPayout.date.year, prevPayout.date.month, prevPayout.date.day)
         : DateTime(_data.shifts.isEmpty
             ? payout.date.year
-            : _data.shifts
-                .map((s) => s.date)
-                .reduce((a, b) => a.isBefore(b) ? a : b)
-                .year,
+            : _data.shifts.map((s) => s.date).reduce((a, b) => a.isBefore(b) ? a : b).year,
             1, 0);
-    final periodEnd = DateTime(
-      payout.date.year,
-      payout.date.month,
-      payout.date.day,
-      23, 59, 59,
-    );
+    final periodEnd = DateTime(payout.date.year, payout.date.month, payout.date.day, 23, 59, 59);
 
-    final periodShifts = _data.shifts.where((s) {
-      return s.date.isAfter(periodStart) && !s.date.isAfter(periodEnd);
-    }).toList();
-
-    // Split: excluded (custom) vs included (normal)
+    final periodShifts = _data.shifts
+        .where((s) => s.date.isAfter(periodStart) && !s.date.isAfter(periodEnd))
+        .toList();
     final excluded = periodShifts
         .where((s) => s.manualEarningsMinor != null || s.customDailyRateMinor != null)
         .toList();
@@ -289,43 +273,43 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
         .where((s) => s.manualEarningsMinor == null && s.customDailyRateMinor == null)
         .toList();
 
-    if (included.isEmpty) return;
+    if (included.isEmpty) return 0;
 
-    // Revenue contribution of included shifts (they keep their % from global settings)
     final revenuePercent = _data.payment.revenuePercent;
     final totalRevenue = included.fold<int>(
-      0,
-      (sum, s) => sum + (s.revenueMinor * revenuePercent / 100).round(),
-    );
+        0, (sum, s) => sum + (s.revenueMinor * revenuePercent / 100).round());
+    final excludedTotal = excluded.fold<int>(0, (sum, s) => sum + s.earningsMinor);
 
-    // Excluded shifts keep their earnings; subtract from actual to find what
-    // the normal shifts must have earned together
-    final excludedTotal =
-        excluded.fold<int>(0, (sum, s) => sum + s.earningsMinor);
-    final adjustedTotal = actualAmountMinor - excludedTotal - totalRevenue;
-    if (included.isEmpty) return;
+    // Implied total period earnings based on payout type
+    final int impliedTotalMinor;
+    if (payout.kind == PayoutKind.advance) {
+      // Advance = 30% of total → total = actual / 0.3, salary will show 70%
+      impliedTotalMinor = (actualAmountMinor / 0.3).round();
+    } else {
+      // Salary = total − advances → total = salary + advances in period
+      final advancesInPeriod = _data.payouts.where((p) {
+        if (p.kind != PayoutKind.advance || p.id == payout.id) return false;
+        final d = DateTime(p.date.year, p.date.month, p.date.day);
+        return d.isAfter(periodStart) && !d.isAfter(periodEnd);
+      }).fold<int>(0, (sum, p) => sum + p.amountMinor);
+      impliedTotalMinor = actualAmountMinor + advancesInPeriod;
+    }
+
+    final adjustedTotal = impliedTotalMinor - excludedTotal - totalRevenue;
     final newDailyRateMinor = (adjustedTotal / included.length).round();
-
     final now = DateTime.now();
     final updatedIncluded = included.map((s) {
-      final revenueContrib =
-          (s.revenueMinor * revenuePercent / 100).round();
-      return s.copyWith(
-        earningsMinor: newDailyRateMinor + revenueContrib,
-        updatedAt: now,
-      );
+      final rev = (s.revenueMinor * revenuePercent / 100).round();
+      return s.copyWith(earningsMinor: newDailyRateMinor + rev, updatedAt: now);
     }).toList();
-
     final unchanged = _data.shifts
         .where((s) => !periodShifts.any((ps) => ps.id == s.id))
         .toList();
-
-    await _save(
-      _data.copyWith(
-        shifts: [...unchanged, ...excluded, ...updatedIncluded]
-          ..sort((a, b) => b.date.compareTo(a.date)),
-      ),
-    );
+    await _save(_data.copyWith(
+      shifts: [...unchanged, ...excluded, ...updatedIncluded]
+        ..sort((a, b) => b.date.compareTo(a.date)),
+    ));
+    return newDailyRateMinor;
   }
 
   Future<void> deletePayout(String id) => _save(

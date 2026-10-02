@@ -2068,10 +2068,23 @@ class _PayoutsSection extends StatelessWidget {
                             final amount = double.tryParse(raw);
                             if (amount == null || amount <= 0) return;
                             Navigator.pop(ctx);
-                            await controller.recalculateShiftsForPayout(
+                            final newRate = await controller.recalculateShiftsForPayout(
                               payout: payout,
                               actualAmountMinor: (amount * 100).round(),
                             );
+                            if (context.mounted && newRate > 0) {
+                              final rateStr = (newRate / 100).toStringAsFixed(0);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    strings.isRu
+                                        ? '✓ Пересчитано. Ставка за день: $rateStr ₽'
+                                        : '✓ Recalculated. Daily rate: $rateStr ₽',
+                                  ),
+                                  duration: const Duration(seconds: 4),
+                                ),
+                              );
+                            }
                           },
                   ),
                 ),
