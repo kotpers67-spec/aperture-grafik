@@ -104,7 +104,7 @@ class FinanceService {
     final nextDate = upcoming.date;
     final daysLeft = _sameDay(nextDate, today)
         ? 0
-        : nextDate.difference(today).inDays;
+        : _calendarDaysBetween(today, nextDate);
 
     // Последняя зафиксированная выплата
     final sortedPayouts = [...state.payouts]
@@ -233,6 +233,16 @@ class FinanceService {
   }
 
   DateTime _day(DateTime value) => DateTime(value.year, value.month, value.day);
+
+  int _calendarDaysBetween(DateTime from, DateTime to) {
+    final fromOrdinal =
+        DateTime.utc(from.year, from.month, from.day).millisecondsSinceEpoch ~/
+        Duration.millisecondsPerDay;
+    final toOrdinal =
+        DateTime.utc(to.year, to.month, to.day).millisecondsSinceEpoch ~/
+        Duration.millisecondsPerDay;
+    return toOrdinal - fromOrdinal;
+  }
 
   DateTime advanceAccrualMonth(
     DateTime payoutDate, {

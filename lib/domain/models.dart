@@ -4,10 +4,28 @@ enum AppLanguage { russian, english }
 
 enum Currency { rub }
 
-enum AppThemeMode { standard, laboratory, aperture, chamber }
+enum AppThemeMode {
+  standard,
+  laboratory,
+  aperture,
+  chamber,
+  ocean,
+  forest,
+  sakura,
+  sunset,
+  slate,
+}
 
 /// Experimental full design language overrides (layered on top of AppThemeMode).
-enum AppDesignStyle { none, glass, neon, minimal, neomorphic }
+enum AppDesignStyle {
+  none,
+  glass,
+  neon,
+  minimal,
+  neomorphic,
+  editorial,
+  aurora,
+}
 
 enum ScheduleType { threeThree, twoTwo, fiveTwo, weekdays }
 
@@ -235,7 +253,10 @@ class PaymentSettings {
         revenuePercent: (json['revenuePercent'] as num?)?.toDouble() ?? 5,
         advanceDay: (json['advanceDay'] as num?)?.toInt() ?? 15,
         salaryDay: (json['salaryDay'] as num?)?.toInt() ?? 30,
-        advancePercent: ((json['advancePercent'] as num?)?.toInt() ?? 30).clamp(0, 100),
+        advancePercent: ((json['advancePercent'] as num?)?.toInt() ?? 30).clamp(
+          0,
+          100,
+        ),
       );
 }
 

@@ -1,30 +1,46 @@
 # Aperture Grafik design system
 
-## Intent
+## Design goals
 
-An accessible, friendly shift-management tool for café employees. It preserves the calm blue hierarchy of the supplied reference while using original Material 3 components and visual tokens.
+An accessible Material 3 interface for tracking shifts and pay. Color palettes and visual treatments are separate settings, so a visual style no longer replaces the selected colors.
+
+## Color palettes
+
+- **Coffee** (default): warm brown and cream.
+- **Milky latte**: the existing light roast palette.
+- **Caramel roast**: the existing orange accent palette.
+- **Night espresso**: the existing dark palette.
+- **Ocean**: blue-green with cool surfaces.
+- **Forest**: deep green with soft botanical surfaces.
+- **Sakura**: rose accents with a pale pink surface.
+- **Warm sunset**: terracotta with a peach surface.
+- **Slate**: blue-grey with a clean neutral surface.
+
+The four original palette enum values remain stable so saved settings and backups continue to load. New palettes are saved by their enum name and unknown names fall back to Coffee.
+
+## Visual styles
+
+- **Coffee classic**: original Material 3 cards and surfaces.
+- **Crystal glass**: lightly tinted surfaces, translucent-looking cards and fine borders.
+- **Neon night**: dark surfaces and a vivid accent derived from the selected palette.
+- **Quiet minimal**: flat cards and restrained borders.
+- **Soft relief**: raised cards with low-contrast shadows.
+- **Editorial**: compact paper-like cards with a subtle ink border.
+- **Aurora**: rounded surfaces with a complementary secondary accent derived from the selected palette.
+
+Visual styles adjust surfaces, card shape and elevation while preserving the user's chosen palette. All components continue to use Material 3 colors and system icons.
+
+## Motion
+
+The **Shift animations** setting controls navigation transitions, navigation icon emphasis, calendar movement, shift completion and value transitions. The app also disables these transitions when the operating system requests reduced motion.
 
 ## Tokens
 
-- Spacing: 8, 12, 16, 20, 24, 32 dp.
-- Cards: 20 dp corners, no elevation, `surfaceContainerLow` background.
-- Inputs: 14 dp corners, filled surface, visible outline in enabled state.
-- Navigation: Material 3 bottom bar with four destinations.
-- Minimum touch targets: 48 dp.
+- Spacing: 8, 12, 16, 20, 24 and 32 dp.
+- Minimum interactive target: 48 dp.
+- Material 3 navigation: four destinations.
+- Surface, border, text and accent colors come from the selected `ColorScheme`.
 
-## Themes
+## Backup before update
 
-1. **Standard** — blue Material 3, used by default.
-2. **Laboratory** — restrained pale blue technical theme.
-3. **Blue and orange** — original blue/orange accent palette.
-4. **Contrast chamber** — dark, high-contrast test-chamber interpretation.
-
-All themes use original icons and tokens. No Portal, Valve or Aperture Laboratories artwork, marks or characters are included.
-
-## Screen inventory
-
-- Five-step onboarding: language, schedule, pay, colleagues, hours.
-- Home: current schedule state, colleagues and end/add-shift actions.
-- Calendar: generated schedule and editable completed shifts.
-- Statistics: period selector, financial metrics and chart.
-- Profile: language, currency, design, reminders, work settings, directory and backup.
+Before opening Android's package installer, the app writes a complete, unencrypted JSON backup to its application documents directory under `backups/`. Installation is cancelled if the backup cannot be written. The latest eight automatic copies are retained. The profile screen describes this behavior; manual export remains available for sharing a copy outside the app.

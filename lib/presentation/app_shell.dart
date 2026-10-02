@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -20,6 +21,7 @@ import '../domain/finance_service.dart';
 import '../domain/models.dart';
 import '../domain/revenue_recommendation_service.dart';
 import '../domain/schedule_service.dart';
+import '../domain/update_backup_service.dart';
 import '../domain/update_service.dart';
 
 class AppShell extends ConsumerStatefulWidget {
@@ -50,20 +52,48 @@ class _AppShellState extends ConsumerState<AppShell> {
       try {
         packageInfo = await PackageInfo.fromPlatform();
       } catch (_) {}
-      final currentVersion = packageInfo?.version ?? '0.3.8';
+      final currentVersion = packageInfo?.version ?? '0.3.9';
 
       const updateService = UpdateService();
-      final release = await updateService.checkForUpdates(currentVersion: currentVersion);
+      final release = await updateService.checkForUpdates(
+        currentVersion: currentVersion,
+      );
 
       if (!mounted || release == null || !release.isNewer) return;
       final data = ref.read(appControllerProvider).asData?.value;
-      final strings = Strings(data?.settings.language ?? AppLanguage.russian);
-      await _promptUpdate(context, release, currentVersion, strings);
+      if (data == null) return;
+      final strings = Strings(data.settings.language);
+      await _promptUpdate(
+        context,
+        release,
+        currentVersion,
+        strings,
+        exportBackup: () =>
+            ref.read(appControllerProvider).requireValue.toBackupJson(),
+      );
     } catch (_) {}
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(appSaveErrorProvider, (_, error) {
+      if (error == null) return;
+      final language = ref
+          .read(appControllerProvider)
+          .requireValue
+          .settings
+          .language;
+      final ru = language == AppLanguage.russian;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          content: Text(
+            ru
+                ? 'Не удалось сохранить изменения. Проверьте свободное место и повторите попытку.'
+                : 'Could not save changes. Check available storage and try again.',
+          ),
+        ),
+      );
+    });
     final data = ref.watch(appControllerProvider).requireValue;
     final strings = Strings(data.settings.language);
     final pages = [
@@ -73,8 +103,43 @@ class _AppShellState extends ConsumerState<AppShell> {
       ProfilePage(data: data),
     ];
     final scheme = Theme.of(context).colorScheme;
+    final animateNavigation =
+        data.settings.shiftAnimationsEnabled &&
+        !MediaQuery.of(context).disableAnimations;
+    final navigationDuration = animateNavigation
+        ? const Duration(milliseconds: 260)
+        : Duration.zero;
     return Scaffold(
-      body: IndexedStack(index: index, children: pages),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          for (var pageIndex = 0; pageIndex < pages.length; pageIndex++)
+            Positioned.fill(
+              child: ExcludeSemantics(
+                excluding: pageIndex != index,
+                child: IgnorePointer(
+                  ignoring: pageIndex != index,
+                  child: AnimatedSlide(
+                    duration: navigationDuration,
+                    curve: Curves.easeOutCubic,
+                    offset: pageIndex == index
+                        ? Offset.zero
+                        : const Offset(0, .018),
+                    child: AnimatedOpacity(
+                      duration: navigationDuration,
+                      curve: Curves.easeOutCubic,
+                      opacity: pageIndex == index ? 1 : 0,
+                      child: TickerMode(
+                        enabled: pageIndex == index,
+                        child: pages[pageIndex],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
       bottomNavigationBar: DecoratedBox(
         decoration: BoxDecoration(
           border: Border(
@@ -88,23 +153,39 @@ class _AppShellState extends ConsumerState<AppShell> {
             onDestinationSelected: (value) => setState(() => index = value),
             destinations: [
               NavigationDestination(
-                icon: const Icon(Icons.local_cafe_outlined),
-                selectedIcon: const Icon(Icons.local_cafe_rounded),
+                icon: _AnimatedNavigationIcon(
+                  selected: index == 0,
+                  enabled: animateNavigation,
+                  idleIcon: Icons.local_cafe_outlined,
+                  activeIcon: Icons.local_cafe_rounded,
+                ),
                 label: strings.home,
               ),
               NavigationDestination(
-                icon: const Icon(Icons.calendar_month_outlined),
-                selectedIcon: const Icon(Icons.calendar_month_rounded),
+                icon: _AnimatedNavigationIcon(
+                  selected: index == 1,
+                  enabled: animateNavigation,
+                  idleIcon: Icons.calendar_month_outlined,
+                  activeIcon: Icons.calendar_month_rounded,
+                ),
                 label: strings.calendar,
               ),
               NavigationDestination(
-                icon: const Icon(Icons.insights_outlined),
-                selectedIcon: const Icon(Icons.insights_rounded),
+                icon: _AnimatedNavigationIcon(
+                  selected: index == 2,
+                  enabled: animateNavigation,
+                  idleIcon: Icons.insights_outlined,
+                  activeIcon: Icons.insights_rounded,
+                ),
                 label: strings.statistics,
               ),
               NavigationDestination(
-                icon: const Icon(Icons.tune_outlined),
-                selectedIcon: const Icon(Icons.tune_rounded),
+                icon: _AnimatedNavigationIcon(
+                  selected: index == 3,
+                  enabled: animateNavigation,
+                  idleIcon: Icons.tune_outlined,
+                  activeIcon: Icons.tune_rounded,
+                ),
                 label: strings.profile,
               ),
             ],
@@ -113,6 +194,33 @@ class _AppShellState extends ConsumerState<AppShell> {
       ),
     );
   }
+}
+
+class _AnimatedNavigationIcon extends StatelessWidget {
+  const _AnimatedNavigationIcon({
+    required this.selected,
+    required this.enabled,
+    required this.idleIcon,
+    required this.activeIcon,
+  });
+
+  final bool selected;
+  final bool enabled;
+  final IconData idleIcon;
+  final IconData activeIcon;
+
+  @override
+  Widget build(BuildContext context) => AnimatedScale(
+    duration: enabled ? const Duration(milliseconds: 220) : Duration.zero,
+    curve: Curves.easeOutBack,
+    scale: selected ? 1.12 : 1,
+    child: AnimatedRotation(
+      duration: enabled ? const Duration(milliseconds: 220) : Duration.zero,
+      curve: Curves.easeOutCubic,
+      turns: selected ? .025 : 0,
+      child: Icon(selected ? activeIcon : idleIcon),
+    ),
+  );
 }
 
 class OnboardingScreen extends ConsumerStatefulWidget {
@@ -240,7 +348,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             const SizedBox(height: 20),
             Expanded(
               child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
+                duration: MediaQuery.of(context).disableAnimations
+                    ? Duration.zero
+                    : const Duration(milliseconds: 220),
                 child: KeyedSubtree(key: ValueKey(_step), child: _page(isRu)),
               ),
             ),
@@ -463,7 +573,8 @@ class HomePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final strings = Strings(data.settings.language);
-    final animateShifts = data.settings.shiftAnimationsEnabled &&
+    final animateShifts =
+        data.settings.shiftAnimationsEnabled &&
         !MediaQuery.of(context).disableAnimations;
     final schedule = const ScheduleService();
     final now = DateTime.now();
@@ -486,11 +597,12 @@ class HomePage extends ConsumerWidget {
     final yesterdayEnd = schedule.endAt(data.schedule, yesterday);
     final isYesterdayOvernightActive =
         schedule.isWorkDay(data.schedule, yesterday) &&
-            yesterdayEnd.day != yesterday.day &&
-            now.isAfter(yesterdayStart) &&
-            now.isBefore(yesterdayEnd) &&
-            yesterdayShift == null;
-    final active = (planned &&
+        yesterdayEnd.day != yesterday.day &&
+        now.isAfter(yesterdayStart) &&
+        now.isBefore(yesterdayEnd) &&
+        yesterdayShift == null;
+    final active =
+        (planned &&
             !now.isBefore(starts) &&
             !now.isAfter(ends) &&
             existing == null) ||
@@ -498,11 +610,11 @@ class HomePage extends ConsumerWidget {
     final pendingDay = planned && now.isAfter(ends) && existing == null
         ? today
         : (schedule.isWorkDay(data.schedule, yesterday) &&
-                yesterdayEnd.day != yesterday.day &&
-                now.isAfter(yesterdayEnd) &&
-                yesterdayShift == null
-            ? yesterday
-            : null);
+                  yesterdayEnd.day != yesterday.day &&
+                  now.isAfter(yesterdayEnd) &&
+                  yesterdayShift == null
+              ? yesterday
+              : null);
     final completionDate = isYesterdayOvernightActive
         ? yesterday
         : (planned && existing == null ? today : pendingDay);
@@ -546,7 +658,9 @@ class HomePage extends ConsumerWidget {
                 : (strings.isRu ? 'Данные смены' : 'Shift details'),
           ),
           AnimatedSwitcher(
-            duration: animateShifts ? const Duration(milliseconds: 320) : Duration.zero,
+            duration: animateShifts
+                ? const Duration(milliseconds: 320)
+                : Duration.zero,
             switchInCurve: Curves.easeOutCubic,
             switchOutCurve: Curves.easeInCubic,
             transitionBuilder: (child, animation) => FadeTransition(
@@ -567,30 +681,32 @@ class HomePage extends ConsumerWidget {
                     kind: ShiftKind.scheduled,
                   )
                 : existing != null
-                    ? _SummaryCard(
-                        key: ValueKey('summary-${existing.id}-${existing.updatedAt}'),
-                        shift: existing,
-                        data: data,
-                      )
-                    : FilledButton.icon(
-                        key: const ValueKey('add-shift-action'),
-                        onPressed: () => showShiftEditor(
-                          context,
-                          data: data,
-                          date: today,
-                          kind: planned ? ShiftKind.scheduled : ShiftKind.extra,
-                        ),
-                        icon: Icon(
-                          planned
-                              ? Icons.check_circle_outline
-                              : Icons.add_circle_outline,
-                        ),
-                        label: Text(
-                          planned
-                              ? strings.completeDay
-                              : (strings.isRu ? 'Добавить смену' : 'Add shift'),
-                        ),
-                      ),
+                ? _SummaryCard(
+                    key: ValueKey(
+                      'summary-${existing.id}-${existing.updatedAt}',
+                    ),
+                    shift: existing,
+                    data: data,
+                  )
+                : FilledButton.icon(
+                    key: const ValueKey('add-shift-action'),
+                    onPressed: () => showShiftEditor(
+                      context,
+                      data: data,
+                      date: today,
+                      kind: planned ? ShiftKind.scheduled : ShiftKind.extra,
+                    ),
+                    icon: Icon(
+                      planned
+                          ? Icons.check_circle_outline
+                          : Icons.add_circle_outline,
+                    ),
+                    label: Text(
+                      planned
+                          ? strings.completeDay
+                          : (strings.isRu ? 'Добавить смену' : 'Add shift'),
+                    ),
+                  ),
           ),
           if (recommendation != null) ...[
             const SizedBox(height: 22),
@@ -636,7 +752,8 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
   Widget build(BuildContext context) {
     final data = widget.data;
     final strings = Strings(data.settings.language);
-    final animateShifts = data.settings.shiftAnimationsEnabled &&
+    final animateShifts =
+        data.settings.shiftAnimationsEnabled &&
         !MediaQuery.of(context).disableAnimations;
     final schedule = const ScheduleService();
     final first = DateTime(month.year, month.month, 1);
@@ -671,31 +788,31 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                   ? const Duration(milliseconds: 280)
                   : Duration.zero,
               curve: Curves.easeOutCubic,
-            width: 40,
-            height: 40,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: shift != null
-                  ? Theme.of(context).colorScheme.primaryContainer
-                  : planned
-                  ? Theme.of(context).colorScheme.secondaryContainer
-                  : null,
-              borderRadius: BorderRadius.circular(14),
-              border: today
-                  ? Border.all(
-                      color: Theme.of(context).colorScheme.primary,
-                      width: 2,
-                    )
-                  : null,
-            ),
-            child: Text(
-              '${date.day}',
-              style: TextStyle(
-                fontWeight: shift != null || today
-                    ? FontWeight.bold
-                    : FontWeight.normal,
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: shift != null
+                    ? Theme.of(context).colorScheme.primaryContainer
+                    : planned
+                    ? Theme.of(context).colorScheme.secondaryContainer
+                    : null,
+                borderRadius: BorderRadius.circular(14),
+                border: today
+                    ? Border.all(
+                        color: Theme.of(context).colorScheme.primary,
+                        width: 2,
+                      )
+                    : null,
               ),
-            ),
+              child: Text(
+                '${date.day}',
+                style: TextStyle(
+                  fontWeight: shift != null || today
+                      ? FontWeight.bold
+                      : FontWeight.normal,
+                ),
+              ),
             ),
           ),
         ),
@@ -730,12 +847,10 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               IconButton(
-                onPressed: () => setState(
-                  () {
-                    _monthDirection = -1;
-                    month = DateTime(month.year, month.month - 1);
-                  },
-                ),
+                onPressed: () => setState(() {
+                  _monthDirection = -1;
+                  month = DateTime(month.year, month.month - 1);
+                }),
                 icon: const Icon(Icons.chevron_left),
               ),
               Expanded(
@@ -750,12 +865,10 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                 ),
               ),
               IconButton(
-                onPressed: () => setState(
-                  () {
-                    _monthDirection = 1;
-                    month = DateTime(month.year, month.month + 1);
-                  },
-                ),
+                onPressed: () => setState(() {
+                  _monthDirection = 1;
+                  month = DateTime(month.year, month.month + 1);
+                }),
                 icon: const Icon(Icons.chevron_right),
               ),
             ],
@@ -786,13 +899,16 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
             transitionBuilder: (child, animation) => FadeTransition(
               opacity: animation,
               child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: Offset(_monthDirection * .08, 0),
-                  end: Offset.zero,
-                ).animate(CurvedAnimation(
-                  parent: animation,
-                  curve: Curves.easeOutCubic,
-                )),
+                position:
+                    Tween<Offset>(
+                      begin: Offset(_monthDirection * .08, 0),
+                      end: Offset.zero,
+                    ).animate(
+                      CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
+                      ),
+                    ),
                 child: child,
               ),
             ),
@@ -882,9 +998,10 @@ class _StatisticsPageState extends ConsumerState<StatisticsPage> {
     final points = <int, int>{};
     for (final shift in shifts) {
       final int key = switch (range) {
-        0 => shift.date
-            .difference(DateTime(from.year, from.month, from.day))
-            .inDays,
+        0 =>
+          shift.date
+              .difference(DateTime(from.year, from.month, from.day))
+              .inDays,
         1 => shift.date.day,
         _ => shift.date.month,
       };
@@ -1159,6 +1276,16 @@ class ProfilePage extends ConsumerWidget {
             onTap: () => _export(context, controller, strings.isRu),
           ),
           _SettingsTile(
+            icon: Icons.backup_outlined,
+            title: strings.isRu
+                ? 'Автокопия перед обновлением'
+                : 'Automatic pre-update backup',
+            subtitle: strings.isRu
+                ? 'Сохраняется перед установкой обновления · хранятся 8 последних'
+                : 'Saved before an update is installed · keeps the latest 8',
+            onTap: () => _showAutomaticBackupInfo(context, strings.isRu),
+          ),
+          _SettingsTile(
             icon: Icons.download_outlined,
             title: strings.isRu ? 'Импорт backup' : 'Import backup',
             subtitle: strings.isRu
@@ -1178,7 +1305,7 @@ class ProfilePage extends ConsumerWidget {
                 icon: Icons.system_update_rounded,
                 title: strings.checkUpdates,
                 subtitle: ver,
-                onTap: () => _handleCheckUpdates(context, strings),
+                onTap: () => _handleCheckUpdates(context, strings, controller),
               );
             },
           ),
@@ -1188,12 +1315,16 @@ class ProfilePage extends ConsumerWidget {
   }
 }
 
-Future<void> _handleCheckUpdates(BuildContext context, Strings strings) async {
+Future<void> _handleCheckUpdates(
+  BuildContext context,
+  Strings strings,
+  AppController controller,
+) async {
   PackageInfo? packageInfo;
   try {
     packageInfo = await PackageInfo.fromPlatform();
   } catch (_) {}
-  final currentVersion = packageInfo?.version ?? '0.3.8';
+  final currentVersion = packageInfo?.version ?? '0.3.9';
 
   if (!context.mounted) return;
   ScaffoldMessenger.of(context).showSnackBar(
@@ -1216,7 +1347,9 @@ Future<void> _handleCheckUpdates(BuildContext context, Strings strings) async {
   const updateService = UpdateService();
   AppReleaseInfo? release;
   try {
-    release = await updateService.checkForUpdates(currentVersion: currentVersion);
+    release = await updateService.checkForUpdates(
+      currentVersion: currentVersion,
+    );
   } catch (_) {}
 
   if (!context.mounted) return;
@@ -1225,29 +1358,41 @@ Future<void> _handleCheckUpdates(BuildContext context, Strings strings) async {
   if (release == null || !release.isNewer) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('${strings.appUpToDate} (v${displayVersion(currentVersion)})'),
+        content: Text(
+          '${strings.appUpToDate} (v${displayVersion(currentVersion)})',
+        ),
         behavior: SnackBarBehavior.floating,
       ),
     );
     return;
   }
 
-  await _promptUpdate(context, release, currentVersion, strings);
+  await _promptUpdate(
+    context,
+    release,
+    currentVersion,
+    strings,
+    exportBackup: controller.exportBackup,
+  );
 }
 
 Future<void> _promptUpdate(
   BuildContext context,
   AppReleaseInfo release,
   String currentVersion,
-  Strings strings,
-) async {
+  Strings strings, {
+  required String Function() exportBackup,
+}) async {
   const updateService = UpdateService();
   final proceed = await showDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog(
       title: Row(
         children: [
-          Icon(Icons.system_update_rounded, color: Theme.of(dialogContext).colorScheme.primary),
+          Icon(
+            Icons.system_update_rounded,
+            color: Theme.of(dialogContext).colorScheme.primary,
+          ),
           const SizedBox(width: 10),
           Expanded(child: Text('${strings.updateAvailable} ${release.tag}')),
         ],
@@ -1292,6 +1437,7 @@ Future<void> _promptUpdate(
   final progressNotifier = ValueNotifier<DownloadProgress>(
     const DownloadProgress(fraction: 0.0, receivedBytes: 0, totalBytes: 0),
   );
+  final progressTitle = ValueNotifier<String>(strings.downloadingUpdate);
 
   showDialog<void>(
     context: context,
@@ -1299,7 +1445,10 @@ Future<void> _promptUpdate(
     builder: (progressContext) => PopScope(
       canPop: false,
       child: AlertDialog(
-        title: Text(strings.downloadingUpdate),
+        title: ValueListenableBuilder<String>(
+          valueListenable: progressTitle,
+          builder: (context, title, _) => Text(title),
+        ),
         content: ValueListenableBuilder<DownloadProgress>(
           valueListenable: progressNotifier,
           builder: (context, progress, _) {
@@ -1320,9 +1469,9 @@ Future<void> _promptUpdate(
                 const SizedBox(height: 12),
                 Text(
                   statusText,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
                 ),
               ],
             );
@@ -1332,6 +1481,7 @@ Future<void> _promptUpdate(
     ),
   );
 
+  var progressDialogOpen = true;
   try {
     final targetPath = await updateService.getLocalApkPath();
     var lastNotifPercent = -5;
@@ -1351,30 +1501,75 @@ Future<void> _promptUpdate(
         final eta = progress.etaString(strings.isRu);
         await NotificationService.instance.showDownloadProgress(
           percent: percent,
-          etaText: eta.isNotEmpty ? eta : (strings.isRu ? 'рассчитывается...' : 'calculating...'),
+          etaText: eta.isNotEmpty
+              ? eta
+              : (strings.isRu ? 'рассчитывается...' : 'calculating...'),
           isRussian: strings.isRu,
         );
       }
     }
 
-    await NotificationService.instance.showDownloadCompleted(isRussian: strings.isRu);
+    progressTitle.value = strings.isRu
+        ? 'Сохраняю данные перед обновлением…'
+        : 'Saving data before update…';
+    try {
+      final documentsDirectory = await getApplicationDocumentsDirectory();
+      await const UpdateBackupService().createBackup(
+        documentsDirectory: documentsDirectory,
+        contents: exportBackup(),
+      );
+    } catch (error) {
+      throw PreUpdateBackupException(error);
+    }
+
+    await NotificationService.instance.showDownloadCompleted(
+      isRussian: strings.isRu,
+    );
 
     if (context.mounted) {
       Navigator.pop(context);
-      await updateService.installApk(targetPath);
+      progressDialogOpen = false;
+      final result = await updateService.installApk(targetPath);
+      if (result.type != ResultType.done && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              strings.isRu
+                  ? 'Не удалось открыть установщик: ${result.message}'
+                  : 'Could not open the installer: ${result.message}',
+            ),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
     }
   } catch (e) {
     await NotificationService.instance.cancelDownloadNotification();
     if (context.mounted) {
-      Navigator.pop(context);
+      if (progressDialogOpen) Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${strings.updateFailed}: $e'),
+          content: Text(
+            e is PreUpdateBackupException
+                ? (strings.isRu
+                      ? 'Не удалось сохранить резервную копию. Установка отменена: ${e.cause}'
+                      : 'Could not save the backup. Installation was cancelled: ${e.cause}')
+                : '${strings.updateFailed}: $e',
+          ),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
     }
+  } finally {
+    progressNotifier.dispose();
+    progressTitle.dispose();
   }
+}
+
+class PreUpdateBackupException implements Exception {
+  const PreUpdateBackupException(this.cause);
+
+  final Object cause;
 }
 
 Future<void> _openExternalUrl(String rawUrl) async {
@@ -1454,8 +1649,12 @@ Future<void> _showRatingDialog(
                       return IconButton(
                         iconSize: 42,
                         icon: Icon(
-                          isFilled ? Icons.star_rounded : Icons.star_outline_rounded,
-                          color: isFilled ? Colors.amber.shade600 : Colors.grey.shade400,
+                          isFilled
+                              ? Icons.star_rounded
+                              : Icons.star_outline_rounded,
+                          color: isFilled
+                              ? Colors.amber.shade600
+                              : Colors.grey.shade400,
                         ),
                         onPressed: () {
                           setModalState(() {
@@ -1480,7 +1679,9 @@ Future<void> _showRatingDialog(
                         controller.updateSettings(
                           data.settings.copyWith(hasRatedProject: true),
                         );
-                        await _openExternalUrl('https://github.com/santiyastudio-lgtm/aperture-grafik');
+                        await _openExternalUrl(
+                          'https://github.com/santiyastudio-lgtm/aperture-grafik',
+                        );
                         if (context.mounted) Navigator.pop(context);
                       },
                       icon: const Icon(Icons.star_rounded),
@@ -1495,7 +1696,9 @@ Future<void> _showRatingDialog(
                         controller.updateSettings(
                           data.settings.copyWith(hasRatedProject: true),
                         );
-                        await _openExternalUrl('https://gitlab.com/santiyastudio/aperture-grafik');
+                        await _openExternalUrl(
+                          'https://gitlab.com/santiyastudio/aperture-grafik',
+                        );
                         if (context.mounted) Navigator.pop(context);
                       },
                       icon: const Icon(Icons.code_rounded),
@@ -1553,10 +1756,7 @@ Future<void> showPayoutEditor(
 }
 
 class _PayoutEditor extends ConsumerStatefulWidget {
-  const _PayoutEditor({
-    required this.data,
-    this.existing,
-  });
+  const _PayoutEditor({required this.data, this.existing});
   final AppState data;
   final Payout? existing;
 
@@ -1612,7 +1812,9 @@ class _PayoutEditorState extends ConsumerState<_PayoutEditor> {
       return;
     }
 
-    await ref.read(appControllerProvider.notifier).savePayout(
+    await ref
+        .read(appControllerProvider.notifier)
+        .savePayout(
           id: widget.existing?.id,
           date: date,
           kind: kind,
@@ -1625,9 +1827,7 @@ class _PayoutEditorState extends ConsumerState<_PayoutEditor> {
       final strings = Strings(widget.data.settings.language);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            strings.isRu ? 'Выплата сохранена' : 'Payout saved',
-          ),
+          content: Text(strings.isRu ? 'Выплата сохранена' : 'Payout saved'),
         ),
       );
     }
@@ -1657,11 +1857,11 @@ class _PayoutEditorState extends ConsumerState<_PayoutEditor> {
                     widget.existing == null
                         ? strings.addPayout
                         : (strings.isRu
-                            ? 'Редактировать выплату'
-                            : 'Edit payout'),
+                              ? 'Редактировать выплату'
+                              : 'Edit payout'),
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
                 IconButton(
@@ -1699,8 +1899,9 @@ class _PayoutEditorState extends ConsumerState<_PayoutEditor> {
             TextField(
               controller: amount,
               autofocus: widget.existing == null,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: InputDecoration(
                 labelText: strings.payoutAmount,
                 prefixIcon: const Icon(Icons.payments_outlined),
@@ -1731,10 +1932,7 @@ class _PayoutEditorState extends ConsumerState<_PayoutEditor> {
 }
 
 class _PayoutSummaryCard extends StatelessWidget {
-  const _PayoutSummaryCard({
-    required this.data,
-    required this.onAddPayout,
-  });
+  const _PayoutSummaryCard({required this.data, required this.onAddPayout});
 
   final AppState data;
   final VoidCallback onAddPayout;
@@ -1760,8 +1958,8 @@ class _PayoutSummaryCard extends StatelessWidget {
     final countdownText = status.daysLeft == 0
         ? strings.todayIsPayoutDay
         : (strings.isRu
-            ? 'До $kindGenitive осталось ${status.daysLeft} дн.'
-            : '${status.daysLeft} days until ${kindTitle.toLowerCase()}');
+              ? 'До $kindGenitive осталось ${status.daysLeft} дн.'
+              : '${status.daysLeft} days until ${kindTitle.toLowerCase()}');
 
     final dateFormatted = DateFormat.MMMMd(locale).format(status.nextDate);
 
@@ -1799,20 +1997,20 @@ class _PayoutSummaryCard extends StatelessWidget {
                     children: [
                       Text(
                         countdownText,
-                        style:
-                            Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: status.daysLeft == 0
-                                      ? scheme.primary
-                                      : scheme.onSurface,
-                                ),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: status.daysLeft == 0
+                                  ? scheme.primary
+                                  : scheme.onSurface,
+                            ),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         '${strings.isRu ? "Плановая дата:" : "Target date:"} $dateFormatted',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
+                          color: scheme.onSurfaceVariant,
+                        ),
                       ),
                     ],
                   ),
@@ -1836,8 +2034,8 @@ class _PayoutSummaryCard extends StatelessWidget {
                       Text(
                         strings.earnedSinceLastPayout,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
+                          color: scheme.onSurfaceVariant,
+                        ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -1859,9 +2057,8 @@ class _PayoutSummaryCard extends StatelessWidget {
                         child: Text(
                           money(data, status.earnedSinceLastPayoutMinor),
                           key: ValueKey(status.earnedSinceLastPayoutMinor),
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w700),
                         ),
                       ),
                     ],
@@ -1880,8 +2077,8 @@ class _PayoutSummaryCard extends StatelessWidget {
                       Text(
                         strings.expectedNextPayout,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
+                          color: scheme.onSurfaceVariant,
+                        ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -1889,25 +2086,32 @@ class _PayoutSummaryCard extends StatelessWidget {
                       AnimatedSwitcher(
                         duration: const Duration(milliseconds: 420),
                         switchInCurve: Curves.easeOutBack,
-                        transitionBuilder: (child, animation) => ScaleTransition(
-                          scale: Tween<double>(begin: 0.96, end: 1).animate(animation),
-                          child: FadeTransition(opacity: animation, child: child),
-                        ),
+                        transitionBuilder: (child, animation) =>
+                            ScaleTransition(
+                              scale: Tween<double>(
+                                begin: 0.96,
+                                end: 1,
+                              ).animate(animation),
+                              child: FadeTransition(
+                                opacity: animation,
+                                child: child,
+                              ),
+                            ),
                         child: Text(
                           money(data, status.estimatedNextPayoutMinor),
                           key: ValueKey(status.estimatedNextPayoutMinor),
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: scheme.primary,
-                          ),
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: scheme.primary,
+                              ),
                         ),
                       ),
                       if (status.estimatedNextPayoutHours > 0)
                         Text(
                           strings.hoursLabel(status.estimatedNextPayoutHours),
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: scheme.onSurfaceVariant,
-                              ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: scheme.onSurfaceVariant),
                         ),
                     ],
                   ),
@@ -1919,9 +2123,9 @@ class _PayoutSummaryCard extends StatelessWidget {
               Text(
                 '${strings.isRu ? "Последняя выплата:" : "Last payout:"} ${status.lastPayout!.kind == PayoutKind.advance ? strings.advance : strings.salary} ${money(data, status.lastPayout!.amountMinor)} (${DateFormat.MMMd(locale).format(status.lastPayout!.date)})',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.outline,
-                      fontStyle: FontStyle.italic,
-                    ),
+                  color: scheme.outline,
+                  fontStyle: FontStyle.italic,
+                ),
               ),
             ],
           ],
@@ -1932,10 +2136,7 @@ class _PayoutSummaryCard extends StatelessWidget {
 }
 
 class _PayoutsSection extends StatelessWidget {
-  const _PayoutsSection({
-    required this.data,
-    required this.controller,
-  });
+  const _PayoutsSection({required this.data, required this.controller});
 
   final AppState data;
   final AppController controller;
@@ -1970,8 +2171,8 @@ class _PayoutsSection extends StatelessWidget {
                     Text(
                       strings.payoutHistory,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ],
                 ),
@@ -2057,9 +2258,11 @@ class _PayoutsSection extends StatelessWidget {
                             final confirm = await showDialog<bool>(
                               context: context,
                               builder: (context) => AlertDialog(
-                                title: Text(strings.isRu
-                                    ? 'Удалить выплату?'
-                                    : 'Delete payout?'),
+                                title: Text(
+                                  strings.isRu
+                                      ? 'Удалить выплату?'
+                                      : 'Delete payout?',
+                                ),
                                 content: Text(
                                   strings.isRu
                                       ? 'Вы уверены, что хотите удалить запись о выплате $kindName на ${money(data, item.amountMinor)}?'
@@ -2075,7 +2278,8 @@ class _PayoutsSection extends StatelessWidget {
                                     onPressed: () =>
                                         Navigator.pop(context, true),
                                     child: Text(
-                                        strings.isRu ? 'Удалить' : 'Delete'),
+                                      strings.isRu ? 'Удалить' : 'Delete',
+                                    ),
                                   ),
                                 ],
                               ),
@@ -2110,14 +2314,15 @@ class _PayoutsSection extends StatelessWidget {
       1,
     ).subtract(const Duration(days: 1));
     final periodEnd = DateTime(periodMonth.year, periodMonth.month + 1, 0);
-    final periodShifts = data.shifts
-        .where((s) {
-          final shiftDate = DateTime(s.date.year, s.date.month, s.date.day);
-          return shiftDate.isAfter(periodStart) && !shiftDate.isAfter(periodEnd);
-        })
-        .toList();
+    final periodShifts = data.shifts.where((s) {
+      final shiftDate = DateTime(s.date.year, s.date.month, s.date.day);
+      return shiftDate.isAfter(periodStart) && !shiftDate.isAfter(periodEnd);
+    }).toList();
     final excludedCount = periodShifts
-        .where((s) => s.manualEarningsMinor != null || s.customDailyRateMinor != null)
+        .where(
+          (s) =>
+              s.manualEarningsMinor != null || s.customDailyRateMinor != null,
+        )
         .length;
     final includedCount = periodShifts.length - excludedCount;
     final amountCtrl = TextEditingController(
@@ -2131,21 +2336,30 @@ class _PayoutsSection extends StatelessWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
+        padding: EdgeInsets.fromLTRB(
+          24,
+          20,
+          24,
+          MediaQuery.of(ctx).viewInsets.bottom + 24,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               strings.isRu ? 'Адаптивная зарплата' : 'Adaptive Salary',
-              style: Theme.of(ctx).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+              style: Theme.of(
+                ctx,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
             Text(
               strings.isRu
                   ? 'Аванс — ${data.payment.advancePercent}% от заработка за месяц. Укажи фактически полученную сумму: пересчёт распределит её долю между $includedCount рабочими сменами месяца; обычная дневная ставка останется не выше ${money(data, data.payment.dailyRateMinor)}.'
                   : 'After recording an advance, adjust earnings for $includedCount shifts since the previous payout.',
-              style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+              style: Theme.of(
+                ctx,
+              ).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
             ),
             if (excludedCount > 0) ...[
               const SizedBox(height: 4),
@@ -2153,7 +2367,9 @@ class _PayoutsSection extends StatelessWidget {
                 strings.isRu
                     ? '⚠ $excludedCount смен с индивидуальной ставкой — не изменятся.'
                     : '⚠ $excludedCount shift${excludedCount == 1 ? "" : "s"} with custom rate — unchanged.',
-                style: Theme.of(ctx).textTheme.bodySmall?.copyWith(color: scheme.error),
+                style: Theme.of(
+                  ctx,
+                ).textTheme.bodySmall?.copyWith(color: scheme.error),
               ),
             ],
             const SizedBox(height: 16),
@@ -2162,7 +2378,9 @@ class _PayoutsSection extends StatelessWidget {
               keyboardType: TextInputType.number,
               autofocus: true,
               decoration: InputDecoration(
-                labelText: strings.isRu ? 'Сумма аванса (₽)' : 'Advance amount (₽)',
+                labelText: strings.isRu
+                    ? 'Сумма аванса (₽)'
+                    : 'Advance amount (₽)',
                 border: const OutlineInputBorder(),
                 prefixIcon: const Icon(Icons.currency_ruble_rounded),
               ),
@@ -2184,16 +2402,22 @@ class _PayoutsSection extends StatelessWidget {
                     onPressed: includedCount == 0
                         ? null
                         : () async {
-                            final raw = amountCtrl.text.trim().replaceAll(',', '.');
+                            final raw = amountCtrl.text.trim().replaceAll(
+                              ',',
+                              '.',
+                            );
                             final amount = double.tryParse(raw);
                             if (amount == null || amount <= 0) return;
                             Navigator.pop(ctx);
-                            final newRate = await controller.recalculateShiftsForPayout(
-                              payout: payout,
-                              actualAmountMinor: (amount * 100).round(),
-                            );
+                            final newRate = await controller
+                                .recalculateShiftsForPayout(
+                                  payout: payout,
+                                  actualAmountMinor: (amount * 100).round(),
+                                );
                             if (context.mounted && newRate > 0) {
-                              final rateStr = (newRate / 100).toStringAsFixed(0);
+                              final rateStr = (newRate / 100).toStringAsFixed(
+                                0,
+                              );
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(
@@ -2330,12 +2554,13 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
 
     final parsedRevenue =
         ((num.tryParse(revenue.text.replaceAll(',', '.')) ?? 0) * 100).round();
-    final parsedCustomPercent =
-        num.tryParse(customPercent.text.replaceAll(',', '.'))?.toDouble();
+    final parsedCustomPercent = num.tryParse(
+      customPercent.text.replaceAll(',', '.'),
+    )?.toDouble();
     final parsedCustomRate = customDailyRate.text.trim().isEmpty
         ? null
         : ((num.tryParse(customDailyRate.text.replaceAll(',', '.')) ?? 0) * 100)
-            .round();
+              .round();
 
     final liveEarningsMinor = const FinanceService().earnings(
       revenueMinor: parsedRevenue,
@@ -2345,7 +2570,9 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
     );
 
     final showRevenueWarning =
-        parsedCustomPercent != null && parsedCustomPercent > 0 && parsedRevenue <= 0;
+        parsedCustomPercent != null &&
+        parsedCustomPercent > 0 &&
+        parsedRevenue <= 0;
 
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -2445,8 +2672,9 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
               children: [
                 TextField(
                   controller: customPercent,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                   decoration: InputDecoration(
                     labelText: strings.customPercentLabel,
                     prefixIcon: const Icon(Icons.percent_rounded),
@@ -2456,8 +2684,9 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: customDailyRate,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                   decoration: InputDecoration(
                     labelText: strings.customDailyRateLabel,
                     prefixIcon: const Icon(Icons.payments_outlined),
@@ -2472,10 +2701,9 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: Theme.of(context)
-                    .colorScheme
-                    .errorContainer
-                    .withValues(alpha: 0.7),
+                color: Theme.of(
+                  context,
+                ).colorScheme.errorContainer.withValues(alpha: 0.7),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Row(
@@ -2504,16 +2732,14 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: Theme.of(context)
-                  .colorScheme
-                  .surfaceContainerHighest
-                  .withValues(alpha: 0.5),
+              color: Theme.of(
+                context,
+              ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: Theme.of(context)
-                    .colorScheme
-                    .outlineVariant
-                    .withValues(alpha: 0.5),
+                color: Theme.of(
+                  context,
+                ).colorScheme.outlineVariant.withValues(alpha: 0.5),
               ),
             ),
             child: Row(
@@ -2530,19 +2756,19 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
                     children: [
                       Text(
                         strings.shiftTotalEarnings,
-                        style:
-                            Theme.of(context).textTheme.labelMedium?.copyWith(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
-                                ),
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
                       ),
                       Text(
                         '${(liveEarningsMinor / 100).toStringAsFixed(0)} ₽',
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
                       ),
                     ],
                   ),
@@ -2557,15 +2783,14 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
                   ((num.tryParse(revenue.text.replaceAll(',', '.')) ?? 0) * 100)
                       .round();
               final percent = num.tryParse(
-                      customPercent.text.replaceAll(',', '.'))
-                  ?.toDouble();
+                customPercent.text.replaceAll(',', '.'),
+              )?.toDouble();
               final rate = customDailyRate.text.trim().isEmpty
                   ? null
-                  : ((num.tryParse(
-                              customDailyRate.text.replaceAll(',', '.')) ??
-                          0) *
-                      100)
-                      .round();
+                  : ((num.tryParse(customDailyRate.text.replaceAll(',', '.')) ??
+                                0) *
+                            100)
+                        .round();
 
               if (percent != null && percent > 0 && amount <= 0) {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -2913,20 +3138,22 @@ class _InlineShiftCompletionFormState
   Future<void> _save() async {
     final revenueMinor =
         ((num.tryParse(_revenue.text.replaceAll(',', '.')) ?? 0) * 100).round();
-    final percent =
-        num.tryParse(_customPercent.text.replaceAll(',', '.'))?.toDouble();
+    final percent = num.tryParse(
+      _customPercent.text.replaceAll(',', '.'),
+    )?.toDouble();
     final rate = _customDailyRate.text.trim().isEmpty
         ? null
         : ((num.tryParse(_customDailyRate.text.replaceAll(',', '.')) ?? 0) *
-                100)
-            .round();
+                  100)
+              .round();
 
     if (percent != null && percent > 0 && revenueMinor <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            Strings(widget.data.settings.language)
-                .revenueRequiredForPercentNotice,
+            Strings(
+              widget.data.settings.language,
+            ).revenueRequiredForPercentNotice,
           ),
         ),
       );
@@ -2953,13 +3180,14 @@ class _InlineShiftCompletionFormState
 
     final parsedRevenue =
         ((num.tryParse(_revenue.text.replaceAll(',', '.')) ?? 0) * 100).round();
-    final parsedCustomPercent =
-        num.tryParse(_customPercent.text.replaceAll(',', '.'))?.toDouble();
+    final parsedCustomPercent = num.tryParse(
+      _customPercent.text.replaceAll(',', '.'),
+    )?.toDouble();
     final parsedCustomRate = _customDailyRate.text.trim().isEmpty
         ? null
         : ((num.tryParse(_customDailyRate.text.replaceAll(',', '.')) ?? 0) *
-                100)
-            .round();
+                  100)
+              .round();
 
     final liveEarningsMinor = const FinanceService().earnings(
       revenueMinor: parsedRevenue,
@@ -2969,7 +3197,9 @@ class _InlineShiftCompletionFormState
     );
 
     final showRevenueWarning =
-        parsedCustomPercent != null && parsedCustomPercent > 0 && parsedRevenue <= 0;
+        parsedCustomPercent != null &&
+        parsedCustomPercent > 0 &&
+        parsedRevenue <= 0;
 
     return Card(
       child: Padding(
@@ -3082,7 +3312,9 @@ class _InlineShiftCompletionFormState
             ),
             const SizedBox(height: 12),
             Theme(
-              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              data: Theme.of(
+                context,
+              ).copyWith(dividerColor: Colors.transparent),
               child: ExpansionTile(
                 initiallyExpanded: false,
                 tilePadding: EdgeInsets.zero,
@@ -3095,8 +3327,9 @@ class _InlineShiftCompletionFormState
                 children: [
                   TextField(
                     controller: _customPercent,
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                     decoration: InputDecoration(
                       labelText: strings.customPercentLabel,
                       prefixIcon: const Icon(Icons.percent_rounded),
@@ -3106,8 +3339,9 @@ class _InlineShiftCompletionFormState
                   const SizedBox(height: 12),
                   TextField(
                     controller: _customDailyRate,
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                     decoration: InputDecoration(
                       labelText: strings.customDailyRateLabel,
                       prefixIcon: const Icon(Icons.payments_outlined),
@@ -3120,13 +3354,14 @@ class _InlineShiftCompletionFormState
             if (showRevenueWarning) ...[
               const SizedBox(height: 8),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .errorContainer
-                      .withValues(alpha: 0.7),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.errorContainer.withValues(alpha: 0.7),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Row(
@@ -3153,19 +3388,16 @@ class _InlineShiftCompletionFormState
             ],
             const SizedBox(height: 16),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: Theme.of(context)
-                    .colorScheme
-                    .surfaceContainerHighest
-                    .withValues(alpha: 0.5),
+                color: Theme.of(
+                  context,
+                ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .outlineVariant
-                      .withValues(alpha: 0.5),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.outlineVariant.withValues(alpha: 0.5),
                 ),
               ),
               child: Row(
@@ -3182,18 +3414,16 @@ class _InlineShiftCompletionFormState
                       children: [
                         Text(
                           strings.shiftTotalEarnings,
-                          style:
-                              Theme.of(context).textTheme.labelMedium?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                                  ),
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
                         ),
                         Text(
                           '${(liveEarningsMinor / 100).toStringAsFixed(0)} ₽',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleLarge
+                          style: Theme.of(context).textTheme.titleLarge
                               ?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 color: Theme.of(context).colorScheme.primary,
@@ -3893,7 +4123,10 @@ Future<void> _selectDesignStyle(
               onPressed: () => Navigator.pop(context, style),
               child: Row(
                 children: [
-                  _DesignStylePreview(style: style),
+                  _DesignStylePreview(
+                    style: style,
+                    mode: data.settings.themeMode,
+                  ),
                   const SizedBox(width: 14),
                   Expanded(child: Text(_designStyleName(style, ru))),
                   if (style == data.settings.designStyle)
@@ -3906,24 +4139,22 @@ Future<void> _selectDesignStyle(
     ),
   );
   if (result != null) {
-    await controller.updateSettings(data.settings.copyWith(designStyle: result));
+    await controller.updateSettings(
+      data.settings.copyWith(designStyle: result),
+    );
   }
 }
 
 class _DesignStylePreview extends StatelessWidget {
-  const _DesignStylePreview({required this.style});
+  const _DesignStylePreview({required this.style, required this.mode});
 
   final AppDesignStyle style;
+  final AppThemeMode mode;
 
   @override
   Widget build(BuildContext context) {
-    final colors = switch (style) {
-      AppDesignStyle.none => const [Color(0xFF6F4E37), Color(0xFFFFF9F2)],
-      AppDesignStyle.glass => const [Color(0xFF167A9C), Color(0xFFEAF5F7)],
-      AppDesignStyle.neon => const [Color(0xFF68F5E5), Color(0xFF090D19)],
-      AppDesignStyle.minimal => const [Color(0xFF496B58), Color(0xFFF5F5F0)],
-      AppDesignStyle.neomorphic => const [Color(0xFF775E4C), Color(0xFFEAE4DC)],
-    };
+    final theme = AppTheme.forMode(mode, designStyle: style);
+    final colors = [theme.colorScheme.primary, theme.scaffoldBackgroundColor];
     return Container(
       width: 48,
       height: 42,
@@ -3940,10 +4171,7 @@ class _DesignStylePreview extends StatelessWidget {
             color: colors[0],
             shape: BoxShape.circle,
             boxShadow: [
-              BoxShadow(
-                color: colors[0].withValues(alpha: .28),
-                blurRadius: 8,
-              ),
+              BoxShadow(color: colors[0].withValues(alpha: .28), blurRadius: 8),
             ],
           ),
         ),
@@ -4206,7 +4434,9 @@ Future<void> _editPayment(
           children: [
             TextField(
               controller: rate,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: InputDecoration(
                 labelText: strings.isRu ? 'Дневная ставка' : 'Daily rate',
                 suffixText: '₽',
@@ -4215,9 +4445,13 @@ Future<void> _editPayment(
             const SizedBox(height: 12),
             TextField(
               controller: percent,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: InputDecoration(
-                labelText: strings.isRu ? 'Процент от выручки' : 'Revenue percent',
+                labelText: strings.isRu
+                    ? 'Процент от выручки'
+                    : 'Revenue percent',
                 suffixText: '%',
               ),
             ),
@@ -4227,7 +4461,9 @@ Future<void> _editPayment(
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
                 labelText: strings.advanceDayLabel,
-                helperText: strings.isRu ? 'Число месяца (1–31)' : 'Day of month (1–31)',
+                helperText: strings.isRu
+                    ? 'Число месяца (1–31)'
+                    : 'Day of month (1–31)',
               ),
             ),
             const SizedBox(height: 12),
@@ -4236,7 +4472,9 @@ Future<void> _editPayment(
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
                 labelText: strings.salaryDayLabel,
-                helperText: strings.isRu ? 'Число месяца (1–31)' : 'Day of month (1–31)',
+                helperText: strings.isRu
+                    ? 'Число месяца (1–31)'
+                    : 'Day of month (1–31)',
               ),
             ),
             const SizedBox(height: 12),
@@ -4244,7 +4482,9 @@ Future<void> _editPayment(
               controller: advancePercent,
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
-                labelText: strings.isRu ? 'Аванс от заработка' : 'Advance share',
+                labelText: strings.isRu
+                    ? 'Аванс от заработка'
+                    : 'Advance share',
                 suffixText: '%',
                 helperText: strings.isRu
                     ? 'Зарплата автоматически: ${100 - data.payment.advancePercent}%'
@@ -4261,8 +4501,10 @@ Future<void> _editPayment(
         ),
         FilledButton(
           onPressed: () {
-            final parsedAdv = int.tryParse(advanceDay.text.trim()) ?? data.payment.advanceDay;
-            final parsedSal = int.tryParse(salaryDay.text.trim()) ?? data.payment.salaryDay;
+            final parsedAdv =
+                int.tryParse(advanceDay.text.trim()) ?? data.payment.advanceDay;
+            final parsedSal =
+                int.tryParse(salaryDay.text.trim()) ?? data.payment.salaryDay;
             Navigator.pop(
               context,
               PaymentSettings(
@@ -4270,13 +4512,16 @@ Future<void> _editPayment(
                     ((num.tryParse(rate.text.replaceAll(',', '.')) ?? 0) * 100)
                         .round(),
                 revenuePercent:
-                    num.tryParse(percent.text.replaceAll(',', '.'))?.toDouble() ??
+                    num.tryParse(
+                      percent.text.replaceAll(',', '.'),
+                    )?.toDouble() ??
                     0,
                 advanceDay: parsedAdv.clamp(1, 31),
                 salaryDay: parsedSal.clamp(1, 31),
-                advancePercent: (int.tryParse(advancePercent.text.trim()) ??
-                        data.payment.advancePercent)
-                    .clamp(0, 100),
+                advancePercent:
+                    (int.tryParse(advancePercent.text.trim()) ??
+                            data.payment.advancePercent)
+                        .clamp(0, 100),
               ),
             );
           },
@@ -4422,6 +4667,27 @@ Future<void> _export(
   }
 }
 
+Future<void> _showAutomaticBackupInfo(BuildContext context, bool ru) async {
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      icon: const Icon(Icons.backup_outlined),
+      title: Text(ru ? 'Автокопия перед обновлением' : 'Automatic backup'),
+      content: Text(
+        ru
+            ? 'Перед запуском установки приложение автоматически сохраняет полный JSON-файл во внутреннюю папку данных. Если создать копию не удастся, установка обновления не начнётся. Хранятся 8 последних копий.'
+            : 'Before opening the installer, the app saves a full JSON file in its local app data. If saving fails, installation will not start. The 8 latest copies are kept.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: Text(ru ? 'Понятно' : 'Got it'),
+        ),
+      ],
+    ),
+  );
+}
+
 Future<void> _import(
   BuildContext context,
   AppController controller,
@@ -4433,7 +4699,11 @@ Future<void> _import(
     withData: true,
   );
   if (!context.mounted) return;
-  if (picked == null || picked.files.isEmpty || picked.files.first.bytes == null) return;
+  if (picked == null ||
+      picked.files.isEmpty ||
+      picked.files.first.bytes == null) {
+    return;
+  }
   final bytes = picked.files.first.bytes!;
   final confirmed = await showDialog<bool>(
     context: context,
@@ -4458,9 +4728,7 @@ Future<void> _import(
   );
   if (confirmed != true) return;
   try {
-    await controller.importBackup(
-      utf8.decode(bytes),
-    );
+    await controller.importBackup(utf8.decode(bytes));
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -4487,6 +4755,7 @@ bool _sameDay(DateTime left, DateTime right) =>
     left.year == right.year &&
     left.month == right.month &&
     left.day == right.day;
+
 /// "0.3.3+9" → "3.3"  |  "1.2.0" → "1.2.0"
 String displayVersion(String raw) {
   final v = raw.split('+').first; // strip build number
@@ -4517,10 +4786,15 @@ String _scheduleDescription(ScheduleType type, bool ru) => switch (type) {
   ScheduleType.weekdays => ru ? 'Выберите нужные дни' : 'Choose your days',
 };
 String _themeName(AppThemeMode mode, bool ru) => switch (mode) {
-  AppThemeMode.standard => ru ? 'Светлая обжарка' : 'Light roast',
+  AppThemeMode.standard => ru ? 'Кофейная' : 'Coffee',
   AppThemeMode.laboratory => ru ? 'Молочный латте' : 'Milky latte',
   AppThemeMode.aperture => ru ? 'Карамельный раф' : 'Caramel roast',
   AppThemeMode.chamber => ru ? 'Ночной эспрессо' : 'Night espresso',
+  AppThemeMode.ocean => ru ? 'Океан' : 'Ocean',
+  AppThemeMode.forest => ru ? 'Лесная зелень' : 'Forest',
+  AppThemeMode.sakura => ru ? 'Сакура' : 'Sakura',
+  AppThemeMode.sunset => ru ? 'Тёплый закат' : 'Warm sunset',
+  AppThemeMode.slate => ru ? 'Сланцевый' : 'Slate',
 };
 
 String _designStyleName(AppDesignStyle style, bool ru) => switch (style) {
@@ -4529,4 +4803,6 @@ String _designStyleName(AppDesignStyle style, bool ru) => switch (style) {
   AppDesignStyle.neon => ru ? 'Неоновая ночь' : 'Neon night',
   AppDesignStyle.minimal => ru ? 'Тихий минимализм' : 'Quiet minimal',
   AppDesignStyle.neomorphic => ru ? 'Мягкий рельеф' : 'Soft relief',
+  AppDesignStyle.editorial => ru ? 'Журнальный' : 'Editorial',
+  AppDesignStyle.aurora => ru ? 'Северное сияние' : 'Aurora',
 };

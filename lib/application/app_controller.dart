@@ -13,23 +13,45 @@ final appRepositoryProvider = Provider<AppRepository>(
   (ref) => SqliteAppRepository(),
 );
 
+final appSaveErrorProvider = NotifierProvider<AppSaveErrorNotifier, Object?>(
+  AppSaveErrorNotifier.new,
+);
+
+class AppSaveErrorNotifier extends Notifier<Object?> {
+  @override
+  Object? build() => null;
+
+  void report(Object? error) => state = error;
+}
+
 final appControllerProvider =
     StateNotifierProvider<AppController, AsyncValue<AppState>>(
-      (ref) => AppController(ref.read(appRepositoryProvider)),
+      (ref) => AppController(
+        ref.read(appRepositoryProvider),
+        onSaveError: ref.read(appSaveErrorProvider.notifier).report,
+      ),
     );
 
+void _ignoreSaveError(Object? _) {}
+
 class AppController extends StateNotifier<AsyncValue<AppState>> {
-  AppController(this._repository) : super(const AsyncValue.loading()) {
+  AppController(this._repository, {this.onSaveError = _ignoreSaveError})
+    : super(const AsyncValue.loading()) {
     initialize();
   }
 
   final AppRepository _repository;
+  final void Function(Object?) onSaveError;
   final _uuid = const Uuid();
   final _finance = const FinanceService();
+  Future<void> _saveTail = Future<void>.value();
+  AppState? _lastPersistedState;
 
   Future<void> initialize() async {
     try {
-      state = AsyncValue.data(await _repository.load());
+      final loaded = await _repository.load();
+      _lastPersistedState = loaded;
+      state = AsyncValue.data(loaded);
     } catch (error, stackTrace) {
       state = AsyncValue.error(error, stackTrace);
     }
@@ -38,13 +60,25 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
   AppState get _data => state.requireValue;
 
   Future<void> _save(AppState value) async {
-    final previousState = state;
+    onSaveError(null);
     state = AsyncValue.data(value);
-    try {
-      await _repository.save(value);
-    } catch (_) {
-      state = previousState;
-    }
+    _saveTail = _saveTail.then((_) async {
+      try {
+        await _repository.save(value);
+        _lastPersistedState = value;
+      } catch (error) {
+        // A newer optimistic save may already include this change. Roll back
+        // and report an error only when this failed value is still current.
+        // A newer save persists a complete state snapshot and will report its
+        // own failure if it also cannot be written.
+        final persisted = _lastPersistedState;
+        if (identical(state.asData?.value, value) && persisted != null) {
+          state = AsyncValue.data(persisted);
+          onSaveError(error);
+        }
+      }
+    });
+    await _saveTail;
   }
 
   Future<void> completeOnboarding({
@@ -395,7 +429,9 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
       throw const FormatException('Backup must contain an object.');
     }
     final parsed = AppState.fromJson(decoded);
+    await _saveTail;
     await _repository.replace(parsed);
+    _lastPersistedState = parsed;
     state = AsyncValue.data(parsed);
   }
 

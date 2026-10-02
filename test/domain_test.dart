@@ -68,14 +68,15 @@ void main() {
     const settings = AppSettings(
       language: AppLanguage.russian,
       currency: Currency.rub,
-      themeMode: AppThemeMode.standard,
+      themeMode: AppThemeMode.sakura,
       onboardingComplete: true,
       notificationsEnabled: true,
-      designStyle: AppDesignStyle.neon,
+      designStyle: AppDesignStyle.aurora,
       shiftAnimationsEnabled: false,
     );
     final restored = AppSettings.fromJson(settings.toJson());
-    expect(restored.designStyle, AppDesignStyle.neon);
+    expect(restored.themeMode, AppThemeMode.sakura);
+    expect(restored.designStyle, AppDesignStyle.aurora);
     expect(restored.shiftAnimationsEnabled, isFalse);
   });
 

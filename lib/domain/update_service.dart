@@ -68,28 +68,17 @@ class SemVer {
   final int build;
 
   static SemVer parse(String raw) {
-    var cleaned = raw.trim();
-    if (cleaned.startsWith('v') || cleaned.startsWith('V')) {
-      cleaned = cleaned.substring(1);
+    final match = RegExp(
+      r'^[vV]?(\d+)\.(\d+)\.(\d+)(?:\+(\d+))?$',
+    ).firstMatch(raw.trim());
+    if (match == null) {
+      throw FormatException('Invalid application version: $raw');
     }
-
-    var buildNumber = 0;
-    if (cleaned.contains('+')) {
-      final parts = cleaned.split('+');
-      cleaned = parts[0];
-      buildNumber = int.tryParse(parts[1]) ?? 0;
-    }
-
-    final segments = cleaned.split('.');
-    final maj = segments.isNotEmpty ? int.tryParse(segments[0]) ?? 0 : 0;
-    final min = segments.length > 1 ? int.tryParse(segments[1]) ?? 0 : 0;
-    final pat = segments.length > 2 ? int.tryParse(segments[2]) ?? 0 : 0;
-
     return SemVer(
-      major: maj,
-      minor: min,
-      patch: pat,
-      build: buildNumber,
+      major: int.parse(match[1]!),
+      minor: int.parse(match[2]!),
+      patch: int.parse(match[3]!),
+      build: int.tryParse(match[4] ?? '') ?? 0,
     );
   }
 
@@ -117,14 +106,18 @@ class UpdateService {
     final httpClient = client ?? http.Client();
     try {
       try {
-        final uri = Uri.parse('https://api.github.com/repos/$githubRepo/releases/latest');
-        final response = await httpClient.get(
-          uri,
-          headers: {
-            'Accept': 'application/vnd.github.v3+json',
-            'User-Agent': 'ApertureGrafik-Updater',
-          },
-        ).timeout(const Duration(seconds: 8));
+        final uri = Uri.parse(
+          'https://api.github.com/repos/$githubRepo/releases/latest',
+        );
+        final response = await httpClient
+            .get(
+              uri,
+              headers: {
+                'Accept': 'application/vnd.github.v3+json',
+                'User-Agent': 'ApertureGrafik-Updater',
+              },
+            )
+            .timeout(const Duration(seconds: 8));
 
         if (response.statusCode == 200) {
           final json = jsonDecode(response.body) as Map<String, dynamic>;
@@ -141,11 +134,16 @@ class UpdateService {
     }
   }
 
-  AppReleaseInfo? _parseGithubRelease(Map<String, dynamic> json, String currentVersion) {
+  AppReleaseInfo? _parseGithubRelease(
+    Map<String, dynamic> json,
+    String currentVersion,
+  ) {
     final tagName = json['tag_name'] as String? ?? '';
     final body = json['body'] as String? ?? '';
     final publishedAtStr = json['published_at'] as String?;
-    final publishedAt = publishedAtStr != null ? DateTime.tryParse(publishedAtStr) : null;
+    final publishedAt = publishedAtStr != null
+        ? DateTime.tryParse(publishedAtStr)
+        : null;
 
     final assets = json['assets'] as List<dynamic>? ?? <dynamic>[];
     String? apkUrl;
@@ -163,7 +161,8 @@ class UpdateService {
     }
 
     if (apkUrl == null || apkUrl.isEmpty) {
-      apkUrl = 'https://github.com/$githubRepo/releases/download/$tagName/aperture-grafik.apk';
+      apkUrl =
+          'https://github.com/$githubRepo/releases/download/$tagName/aperture-grafik.apk';
     }
 
     final remoteSemver = SemVer.parse(tagName);
@@ -187,12 +186,15 @@ class UpdateService {
     http.Client? client,
   }) async* {
     final httpClient = client ?? http.Client();
+    var finalReceivedBytes = 0;
+    var finalTotalBytes = 0;
     try {
       var currentUrl = Uri.parse(downloadUrl);
+      _validateDownloadUri(currentUrl);
       http.StreamedResponse? streamedResponse;
       var redirectCount = 0;
 
-      while (redirectCount < 6) {
+      while (redirectCount <= 6) {
         final request = http.Request('GET', currentUrl);
         request.headers['User-Agent'] = 'ApertureGrafik-Updater';
         final response = await httpClient.send(request);
@@ -201,13 +203,16 @@ class UpdateService {
           final location = response.headers['location'];
           if (location != null && location.isNotEmpty) {
             currentUrl = currentUrl.resolve(location);
+            _validateDownloadUri(currentUrl);
             redirectCount++;
             continue;
           }
         }
 
         if (response.statusCode < 200 || response.statusCode >= 300) {
-          throw HttpException('Failed to download update: HTTP ${response.statusCode}');
+          throw HttpException(
+            'Failed to download update: HTTP ${response.statusCode}',
+          );
         }
 
         streamedResponse = response;
@@ -215,11 +220,14 @@ class UpdateService {
       }
 
       if (streamedResponse == null) {
-        throw const HttpException('Too many redirects while downloading update');
+        throw const HttpException(
+          'Too many redirects while downloading update',
+        );
       }
 
       final totalBytes = streamedResponse.contentLength ?? 0;
       var receivedBytes = 0;
+      finalTotalBytes = totalBytes;
       final startTime = DateTime.now();
 
       final file = File(targetPath);
@@ -229,6 +237,7 @@ class UpdateService {
       await file.create(recursive: true);
 
       final sink = file.openWrite();
+      var completed = false;
       try {
         await for (final chunk in streamedResponse.stream) {
           sink.add(chunk);
@@ -250,8 +259,35 @@ class UpdateService {
           );
         }
         await sink.flush();
+        completed = true;
       } finally {
         await sink.close();
+        if (!completed) {
+          try {
+            if (await file.exists()) await file.delete();
+          } on FileSystemException {
+            // A failed download must not mask its original network error.
+          }
+        }
+      }
+      finalReceivedBytes = receivedBytes;
+      if (totalBytes > 0 && receivedBytes != totalBytes) {
+        try {
+          await file.delete();
+        } on FileSystemException {
+          // The size mismatch remains the actionable error.
+        }
+        throw HttpException(
+          'Incomplete update download: received $receivedBytes of $totalBytes bytes',
+        );
+      }
+      if (receivedBytes == 0) {
+        try {
+          await file.delete();
+        } on FileSystemException {
+          // The empty response remains the actionable error.
+        }
+        throw const HttpException('Update download was empty');
       }
     } finally {
       if (client == null) {
@@ -259,12 +295,18 @@ class UpdateService {
       }
     }
 
-    yield const DownloadProgress(
+    yield DownloadProgress(
       fraction: 1.0,
-      receivedBytes: 1,
-      totalBytes: 1,
+      receivedBytes: finalReceivedBytes,
+      totalBytes: finalTotalBytes > 0 ? finalTotalBytes : finalReceivedBytes,
       remainingSeconds: 0,
     );
+  }
+
+  void _validateDownloadUri(Uri uri) {
+    if (uri.scheme != 'https' || uri.host.isEmpty || uri.userInfo.isNotEmpty) {
+      throw HttpException('Update downloads and redirects must use HTTPS');
+    }
   }
 
   Future<String> getLocalApkPath() async {

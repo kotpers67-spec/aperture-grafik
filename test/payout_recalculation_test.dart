@@ -4,6 +4,53 @@ import 'package:aperture_grafik/data/app_repository.dart';
 import 'package:aperture_grafik/domain/models.dart';
 
 void main() {
+  test('save failures restore saved state and notify the UI', () async {
+    final initial = _state(shifts: const [], payouts: const []);
+    final repository = _FailingMemoryRepository(initial);
+    final failures = <Object?>[];
+    final controller = AppController(repository, onSaveError: failures.add);
+    await controller.initialize();
+
+    await controller.updateSettings(
+      controller.state.requireValue.settings.copyWith(
+        shiftAnimationsEnabled: false,
+      ),
+    );
+
+    expect(
+      controller.state.requireValue.settings.shiftAnimationsEnabled,
+      isTrue,
+    );
+    expect(failures.whereType<StateError>(), hasLength(1));
+  });
+
+  test('a failed older save cannot roll back a newer queued save', () async {
+    final initial = _state(shifts: const [], payouts: const []);
+    final repository = _FirstSaveFailsRepository(initial);
+    final failures = <Object?>[];
+    final controller = AppController(repository, onSaveError: failures.add);
+    await controller.initialize();
+
+    final firstSave = controller.updateSettings(
+      controller.state.requireValue.settings.copyWith(
+        shiftAnimationsEnabled: false,
+      ),
+    );
+    final secondSave = controller.updateSettings(
+      controller.state.requireValue.settings.copyWith(
+        themeMode: AppThemeMode.ocean,
+      ),
+    );
+    await Future.wait([firstSave, secondSave]);
+
+    final savedSettings = controller.state.requireValue.settings;
+    expect(savedSettings.shiftAnimationsEnabled, isFalse);
+    expect(savedSettings.themeMode, AppThemeMode.ocean);
+    expect(repository.value.settings.shiftAnimationsEnabled, isFalse);
+    expect(repository.value.settings.themeMode, AppThemeMode.ocean);
+    expect(failures.whereType<StateError>(), isEmpty);
+  });
+
   test(
     'advance recalculation applies payout amount and configured 30 percent share',
     () async {
@@ -264,4 +311,24 @@ class _MemoryRepository implements AppRepository {
 
   @override
   Future<void> replace(AppState state) async => value = state;
+}
+
+class _FailingMemoryRepository extends _MemoryRepository {
+  _FailingMemoryRepository(super.value);
+
+  @override
+  Future<void> save(AppState state) async => throw StateError('storage full');
+}
+
+class _FirstSaveFailsRepository extends _MemoryRepository {
+  _FirstSaveFailsRepository(super.value);
+
+  var _saveCount = 0;
+
+  @override
+  Future<void> save(AppState state) async {
+    _saveCount++;
+    if (_saveCount == 1) throw StateError('temporary storage failure');
+    value = state;
+  }
 }

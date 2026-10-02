@@ -24,6 +24,12 @@ void main() {
       expect(v.build, 5);
     });
 
+    test('rejects malformed versions instead of treating them as zero', () {
+      expect(() => SemVer.parse('latest'), throwsFormatException);
+      expect(() => SemVer.parse('0.4'), throwsFormatException);
+      expect(() => SemVer.parse('0.4.-1'), throwsFormatException);
+    });
+
     test('correctly identifies newer versions', () {
       final v020 = SemVer.parse('0.2.0');
       final v021 = SemVer.parse('0.2.1');
@@ -114,42 +120,61 @@ void main() {
     }
     ''';
 
-    test('detects v0.3.1 as newer from v0.2.0 and v0.3.0, but not from v0.3.1', () async {
-      final client = MockClient((request) async {
-        if (request.url.host == 'api.github.com') {
-          return http.Response(githubJson, 200, headers: {'content-type': 'application/json'});
-        }
-        return http.Response('Not Found', 404);
-      });
+    test(
+      'detects v0.3.1 as newer from v0.2.0 and v0.3.0, but not from v0.3.1',
+      () async {
+        final client = MockClient((request) async {
+          if (request.url.host == 'api.github.com') {
+            return http.Response(
+              githubJson,
+              200,
+              headers: {'content-type': 'application/json'},
+            );
+          }
+          return http.Response('Not Found', 404);
+        });
 
-      const service = UpdateService();
+        const service = UpdateService();
 
-      // Check from v0.2.0
-      final rel020 = await service.checkForUpdates(currentVersion: 'v0.2.0', client: client);
-      expect(rel020, isNotNull);
-      expect(rel020!.isNewer, isTrue);
-      expect(rel020.tag, 'v0.3.1');
-      expect(rel020.version, '0.3.1');
-      expect(
-        rel020.downloadUrl,
-        'https://github.com/santiyastudio-lgtm/aperture-grafik/releases/download/v0.3.1/aperture-grafik.apk',
-      );
+        // Check from v0.2.0
+        final rel020 = await service.checkForUpdates(
+          currentVersion: 'v0.2.0',
+          client: client,
+        );
+        expect(rel020, isNotNull);
+        expect(rel020!.isNewer, isTrue);
+        expect(rel020.tag, 'v0.3.1');
+        expect(rel020.version, '0.3.1');
+        expect(
+          rel020.downloadUrl,
+          'https://github.com/santiyastudio-lgtm/aperture-grafik/releases/download/v0.3.1/aperture-grafik.apk',
+        );
 
-      // Check from v0.3.0
-      final rel030 = await service.checkForUpdates(currentVersion: '0.3.0', client: client);
-      expect(rel030, isNotNull);
-      expect(rel030!.isNewer, isTrue);
+        // Check from v0.3.0
+        final rel030 = await service.checkForUpdates(
+          currentVersion: '0.3.0',
+          client: client,
+        );
+        expect(rel030, isNotNull);
+        expect(rel030!.isNewer, isTrue);
 
-      // Check from v0.3.1
-      final rel031 = await service.checkForUpdates(currentVersion: '0.3.1', client: client);
-      expect(rel031, isNotNull);
-      expect(rel031!.isNewer, isFalse);
+        // Check from v0.3.1
+        final rel031 = await service.checkForUpdates(
+          currentVersion: '0.3.1',
+          client: client,
+        );
+        expect(rel031, isNotNull);
+        expect(rel031!.isNewer, isFalse);
 
-      // Check from v0.3.1+4
-      final rel031b4 = await service.checkForUpdates(currentVersion: '0.3.1+4', client: client);
-      expect(rel031b4, isNotNull);
-      expect(rel031b4!.isNewer, isFalse);
-    });
+        // Check from v0.3.1+4
+        final rel031b4 = await service.checkForUpdates(
+          currentVersion: '0.3.1+4',
+          client: client,
+        );
+        expect(rel031b4, isNotNull);
+        expect(rel031b4!.isNewer, isFalse);
+      },
+    );
 
     test('uses GitHub Releases as the only update source', () async {
       const githubJson = '''
@@ -171,24 +196,86 @@ void main() {
       final client = MockClient((request) async {
         requestedHosts.add(request.url.host);
         if (request.url.host == 'api.github.com') {
-          return http.Response(githubJson, 200, headers: {'content-type': 'application/json'});
+          return http.Response(
+            githubJson,
+            200,
+            headers: {'content-type': 'application/json'},
+          );
         }
         return http.Response('Not Found', 404);
       });
 
       const service = UpdateService();
-      final release = await service.checkForUpdates(currentVersion: '0.3.0', client: client);
+      final release = await service.checkForUpdates(
+        currentVersion: '0.3.0',
+        client: client,
+      );
 
       expect(release, isNotNull);
       expect(release!.isNewer, isTrue);
       expect(release.tag, 'v0.3.1');
       expect(release.sizeBytes, 59919418);
-      expect(release.downloadUrl, 'https://github.com/santiyastudio-lgtm/aperture-grafik/releases/download/v0.3.1/aperture-grafik.apk');
+      expect(
+        release.downloadUrl,
+        'https://github.com/santiyastudio-lgtm/aperture-grafik/releases/download/v0.3.1/aperture-grafik.apk',
+      );
       expect(requestedHosts, ['api.github.com']);
     });
   });
 
   group('UpdateService downloadApk streaming & errors', () {
+    test('refuses insecure download URLs before making a request', () async {
+      var requested = false;
+      final client = MockClient((request) async {
+        requested = true;
+        return http.Response('', 200);
+      });
+
+      const service = UpdateService();
+      await expectLater(
+        service
+            .downloadApk(
+              downloadUrl: 'http://example.com/update.apk',
+              targetPath: '${Directory.systemTemp.path}/insecure.apk',
+              client: client,
+            )
+            .toList(),
+        throwsA(isA<HttpException>()),
+      );
+      expect(requested, isFalse);
+    });
+
+    test(
+      'rejects an incomplete response and removes the partial file',
+      () async {
+        final tempDir = await Directory.systemTemp.createTemp(
+          'update_partial_',
+        );
+        final targetFile = File('${tempDir.path}/partial.apk');
+        final client = MockClient.streaming((request, bodyStream) async {
+          return http.StreamedResponse(
+            Stream.value(Uint8List.fromList([1, 2, 3])),
+            200,
+            contentLength: 4,
+          );
+        });
+
+        const service = UpdateService();
+        await expectLater(
+          service
+              .downloadApk(
+                downloadUrl: 'https://example.com/update.apk',
+                targetPath: targetFile.path,
+                client: client,
+              )
+              .toList(),
+          throwsA(isA<HttpException>()),
+        );
+        expect(await targetFile.exists(), isFalse);
+        await tempDir.delete(recursive: true);
+      },
+    );
+
     test('streams download chunks and writes file to targetPath', () async {
       final tempDir = await Directory.systemTemp.createTemp('update_test_');
       final targetFile = File('${tempDir.path}/test_download.apk');
@@ -204,11 +291,13 @@ void main() {
       });
 
       const service = UpdateService();
-      final progressList = await service.downloadApk(
-        downloadUrl: 'https://example.com/test.apk',
-        targetPath: targetFile.path,
-        client: streamingClient,
-      ).toList();
+      final progressList = await service
+          .downloadApk(
+            downloadUrl: 'https://example.com/test.apk',
+            targetPath: targetFile.path,
+            client: streamingClient,
+          )
+          .toList();
 
       expect(progressList.length, greaterThanOrEqualTo(2));
       expect(await targetFile.exists(), isTrue);
@@ -227,16 +316,17 @@ void main() {
 
       const service = UpdateService();
       expect(
-        () => service.downloadApk(
-          downloadUrl: 'https://example.com/nonexistent.apk',
-          targetPath: targetFile.path,
-          client: errorClient,
-        ).toList(),
+        () => service
+            .downloadApk(
+              downloadUrl: 'https://example.com/nonexistent.apk',
+              targetPath: targetFile.path,
+              client: errorClient,
+            )
+            .toList(),
         throwsA(isA<HttpException>()),
       );
 
       await tempDir.delete(recursive: true);
     });
   });
-
 }

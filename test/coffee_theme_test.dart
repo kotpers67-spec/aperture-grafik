@@ -27,6 +27,25 @@ void main() {
     );
   });
 
+  test('new palettes remain visible under every visual style', () {
+    for (final style in AppDesignStyle.values) {
+      final ocean = AppTheme.forMode(AppThemeMode.ocean, designStyle: style);
+      final forest = AppTheme.forMode(AppThemeMode.forest, designStyle: style);
+      expect(
+        ocean.colorScheme.primary,
+        isNot(forest.colorScheme.primary),
+        reason: '${style.name} must preserve the selected color palette',
+      );
+    }
+
+    expect(
+      AppThemeMode.values
+          .map((mode) => AppTheme.forMode(mode).colorScheme.primary)
+          .toSet(),
+      hasLength(AppThemeMode.values.length),
+    );
+  });
+
   test('all visual styles produce valid, distinct Material 3 themes', () {
     final themes = AppDesignStyle.values
         .map(
@@ -149,7 +168,10 @@ void main() {
         await tester.pumpWidget(
           ProviderScope(
             child: MaterialApp(
-              theme: AppTheme.forMode(AppThemeMode.standard, designStyle: style),
+              theme: AppTheme.forMode(
+                AppThemeMode.standard,
+                designStyle: style,
+              ),
               home: CalendarPage(data: data),
             ),
           ),
