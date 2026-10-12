@@ -75,6 +75,9 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
       }
       _lastPersistedState = finalState;
       state = AsyncValue.data(finalState);
+      if (finalState.settings.isBlocked) {
+        onBlockedChanged?.call(true);
+      }
       unawaited(checkModerationStatus(finalState.settings.userId));
     } catch (error, stackTrace) {
       state = AsyncValue.error(error, stackTrace);
@@ -85,8 +88,20 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
     try {
       final uid = userId ?? (state.asData?.value.settings.userId ?? '');
       if (uid.isNotEmpty) {
-        final isBlocked = await _moderation.isUserBlocked(uid);
-        onBlockedChanged?.call(isBlocked);
+        final serverResult = await _moderation.checkUserBlocked(uid);
+        if (serverResult != null) {
+          onBlockedChanged?.call(serverResult);
+          final current = state.asData?.value;
+          if (current != null && current.settings.isBlocked != serverResult) {
+            final updated = current.copyWith(
+              settings: current.settings.copyWith(isBlocked: serverResult),
+            );
+            await _save(updated);
+          }
+        } else {
+          final localBlocked = state.asData?.value.settings.isBlocked ?? false;
+          onBlockedChanged?.call(localBlocked);
+        }
       }
     } catch (_) {}
   }

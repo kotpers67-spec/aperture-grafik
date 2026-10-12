@@ -7,7 +7,11 @@ class ModerationService {
   static const String blockedUsersUrl =
       'https://gitlab.com/api/v4/projects/santiyastudio%2Faperture-grafik/repository/files/blocked_users.json/raw?ref=main';
 
-  Future<bool> isUserBlocked(String userId, {http.Client? client}) async {
+  /// Returns:
+  /// - `true` if server responded 200 and [userId] is in blocked list.
+  /// - `false` if server responded 200 and [userId] is NOT in blocked list.
+  /// - `null` if offline, request failed or timed out.
+  Future<bool?> checkUserBlocked(String userId, {http.Client? client}) async {
     final cleanId = userId.trim().toUpperCase();
     if (cleanId.isEmpty) return false;
     final httpClient = client ?? http.Client();
@@ -29,13 +33,18 @@ class ModerationService {
           return blockedIds.contains(cleanId);
         }
       }
-      return false;
+      return null;
     } catch (_) {
-      return false;
+      return null;
     } finally {
       if (client == null) {
         httpClient.close();
       }
     }
+  }
+
+  Future<bool> isUserBlocked(String userId, {http.Client? client}) async {
+    final result = await checkUserBlocked(userId, client: client);
+    return result ?? false;
   }
 }

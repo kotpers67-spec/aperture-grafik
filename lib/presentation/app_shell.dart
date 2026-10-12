@@ -5012,7 +5012,7 @@ class _BlockedUserScreen extends StatelessWidget {
                         ),
                       ),
                       onPressed: () => launchUrl(
-                        Uri.parse('https://t.me/santiyastudio'),
+                        Uri.parse('https://t.me/SantiLA213'),
                         mode: LaunchMode.externalApplication,
                       ),
                       icon: const Icon(Icons.send_rounded, size: 18),

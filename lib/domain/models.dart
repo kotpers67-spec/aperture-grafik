@@ -76,6 +76,7 @@ class AppSettings {
     this.designStyle = AppDesignStyle.none,
     this.shiftAnimationsEnabled = true,
     this.userId = '',
+    this.isBlocked = false,
   });
 
   static String generateUserId() {
@@ -94,6 +95,7 @@ class AppSettings {
   final AppDesignStyle designStyle;
   final bool shiftAnimationsEnabled;
   final String userId;
+  final bool isBlocked;
 
   AppSettings copyWith({
     AppLanguage? language,
@@ -107,6 +109,7 @@ class AppSettings {
     AppDesignStyle? designStyle,
     bool? shiftAnimationsEnabled,
     String? userId,
+    bool? isBlocked,
   }) => AppSettings(
     language: language ?? this.language,
     currency: currency ?? this.currency,
@@ -121,6 +124,7 @@ class AppSettings {
     shiftAnimationsEnabled:
         shiftAnimationsEnabled ?? this.shiftAnimationsEnabled,
     userId: userId ?? this.userId,
+    isBlocked: isBlocked ?? this.isBlocked,
   );
 
   Map<String, dynamic> toJson() => {
@@ -135,6 +139,7 @@ class AppSettings {
     'designStyle': designStyle.name,
     'shiftAnimationsEnabled': shiftAnimationsEnabled,
     'userId': userId,
+    'isBlocked': isBlocked,
   };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
@@ -164,6 +169,7 @@ class AppSettings {
       ),
       shiftAnimationsEnabled: json['shiftAnimationsEnabled'] as bool? ?? true,
       userId: assignedUserId,
+      isBlocked: json['isBlocked'] as bool? ?? false,
     );
   }
 }
