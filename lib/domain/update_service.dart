@@ -416,11 +416,42 @@ class UpdateService {
   }
 
   Future<String> getLocalApkPath() async {
+    if (Platform.isAndroid) {
+      try {
+        final extDirs = await getExternalStorageDirectories(
+          type: StorageDirectory.downloads,
+        );
+        if (extDirs != null && extDirs.isNotEmpty) {
+          final dir = extDirs.first;
+          if (!await dir.exists()) {
+            await dir.create(recursive: true);
+          }
+          return '${dir.path}/update_aperture_grafik.apk';
+        }
+      } catch (_) {}
+      try {
+        final extCache = await getExternalCacheDirectories();
+        if (extCache != null && extCache.isNotEmpty) {
+          final dir = extCache.first;
+          if (!await dir.exists()) {
+            await dir.create(recursive: true);
+          }
+          return '${dir.path}/update_aperture_grafik.apk';
+        }
+      } catch (_) {}
+    }
     final tempDir = await getTemporaryDirectory();
     return '${tempDir.path}/update_aperture_grafik.apk';
   }
 
   Future<OpenResult> installApk(String filePath) async {
+    final file = File(filePath);
+    if (!await file.exists()) {
+      return OpenResult(
+        type: ResultType.fileNotFound,
+        message: 'APK file not found on disk',
+      );
+    }
     return OpenFilex.open(
       filePath,
       type: 'application/vnd.android.package-archive',

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,10 +9,13 @@ import '../data/app_repository.dart';
 import '../data/sqlite_app_repository.dart';
 import '../domain/finance_service.dart';
 import '../domain/models.dart';
+import '../domain/moderation_service.dart';
 
 final appRepositoryProvider = Provider<AppRepository>(
   (ref) => SqliteAppRepository(),
 );
+
+final userBlockedProvider = StateProvider<bool>((ref) => false);
 
 final appSaveErrorProvider = NotifierProvider<AppSaveErrorNotifier, Object?>(
   AppSaveErrorNotifier.new,
@@ -29,32 +33,62 @@ final appControllerProvider =
       (ref) => AppController(
         ref.read(appRepositoryProvider),
         onSaveError: ref.read(appSaveErrorProvider.notifier).report,
+        onBlockedChanged: (blocked) {
+          ref.read(userBlockedProvider.notifier).state = blocked;
+        },
       ),
     );
 
 void _ignoreSaveError(Object? _) {}
 
 class AppController extends StateNotifier<AsyncValue<AppState>> {
-  AppController(this._repository, {this.onSaveError = _ignoreSaveError})
-    : super(const AsyncValue.loading()) {
+  AppController(
+    this._repository, {
+    this.onSaveError = _ignoreSaveError,
+    this.onBlockedChanged,
+  }) : super(const AsyncValue.loading()) {
     initialize();
   }
 
   final AppRepository _repository;
   final void Function(Object?) onSaveError;
+  final void Function(bool)? onBlockedChanged;
   final _uuid = const Uuid();
   final _finance = const FinanceService();
+  final _moderation = const ModerationService();
   Future<void> _saveTail = Future<void>.value();
   AppState? _lastPersistedState;
 
   Future<void> initialize() async {
     try {
       final loaded = await _repository.load();
-      _lastPersistedState = loaded;
-      state = AsyncValue.data(loaded);
+      AppState finalState = loaded;
+      if (loaded.settings.userId.isEmpty) {
+        finalState = loaded.copyWith(
+          settings: loaded.settings.copyWith(
+            userId: AppSettings.generateUserId(),
+          ),
+        );
+        try {
+          await _repository.save(finalState);
+        } catch (_) {}
+      }
+      _lastPersistedState = finalState;
+      state = AsyncValue.data(finalState);
+      unawaited(checkModerationStatus(finalState.settings.userId));
     } catch (error, stackTrace) {
       state = AsyncValue.error(error, stackTrace);
     }
+  }
+
+  Future<void> checkModerationStatus([String? userId]) async {
+    try {
+      final uid = userId ?? (state.asData?.value.settings.userId ?? '');
+      if (uid.isNotEmpty) {
+        final isBlocked = await _moderation.isUserBlocked(uid);
+        onBlockedChanged?.call(isBlocked);
+      }
+    } catch (_) {}
   }
 
   AppState get _data => state.requireValue;

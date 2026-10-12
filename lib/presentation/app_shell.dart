@@ -95,6 +95,16 @@ class _AppShellState extends ConsumerState<AppShell> {
       );
     });
     final data = ref.watch(appControllerProvider).requireValue;
+    final isBlocked = ref.watch(userBlockedProvider);
+    if (isBlocked) {
+      return _BlockedUserScreen(
+        userId: data.settings.userId,
+        isRussian: data.settings.language == AppLanguage.russian,
+        onRefresh: () => ref
+            .read(appControllerProvider.notifier)
+            .checkModerationStatus(data.settings.userId),
+      );
+    }
     final strings = Strings(data.settings.language);
     final pages = [
       HomePage(data: data),
@@ -1309,6 +1319,29 @@ class ProfilePage extends ConsumerWidget {
               );
             },
           ),
+          _SettingsTile(
+            icon: Icons.badge_outlined,
+            title: strings.isRu ? 'Ваш ID пользователя' : 'Your User ID',
+            subtitle: data.settings.userId.isNotEmpty
+                ? data.settings.userId
+                : 'APERTURE-USER',
+            onTap: () {
+              final uid = data.settings.userId.isNotEmpty
+                  ? data.settings.userId
+                  : 'APERTURE-USER';
+              Clipboard.setData(ClipboardData(text: uid));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    strings.isRu
+                        ? 'ID скопирован в буфер: $uid'
+                        : 'ID copied to clipboard: $uid',
+                  ),
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            },
+          ),
         ],
       ),
     );
@@ -1555,8 +1588,13 @@ Future<void> _promptUpdate(
           SnackBar(
             content: Text(
               strings.isRu
-                  ? 'Не удалось открыть установщик: ${result.message}'
-                  : 'Could not open the installer: ${result.message}',
+                  ? 'Не удалось открыть установщик: ${result.message}. Разрешите установку неизвестных приложений для Aperture Grafik в настройках.'
+                  : 'Could not open the installer: ${result.message}. Please enable installing unknown apps in settings.',
+            ),
+            duration: const Duration(seconds: 10),
+            action: SnackBarAction(
+              label: strings.isRu ? 'Повторить' : 'Retry',
+              onPressed: () => updateService.installApk(targetPath),
             ),
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
@@ -4826,3 +4864,190 @@ String _designStyleName(AppDesignStyle style, bool ru) => switch (style) {
   AppDesignStyle.editorial => ru ? 'Журнальный' : 'Editorial',
   AppDesignStyle.aurora => ru ? 'Северное сияние' : 'Aurora',
 };
+
+class _BlockedUserScreen extends StatelessWidget {
+  const _BlockedUserScreen({
+    required this.userId,
+    required this.isRussian,
+    required this.onRefresh,
+  });
+
+  final String userId;
+  final bool isRussian;
+  final VoidCallback onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      backgroundColor: const Color(0xFF0F1117),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 440),
+              padding: const EdgeInsets.all(28),
+              decoration: BoxDecoration(
+                color: const Color(0xFF181C26),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: const Color(0xFFE53935).withValues(alpha: 0.35),
+                  width: 1.5,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFE53935).withValues(alpha: 0.12),
+                    blurRadius: 32,
+                    spreadRadius: 4,
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE53935).withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.block_rounded,
+                      color: Color(0xFFE53935),
+                      size: 34,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    isRussian ? 'Доступ ограничен' : 'Access Restricted',
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    isRussian
+                        ? 'Использование приложения приостановлено по вашему идентификатору.'
+                        : 'Application access has been suspended for your user account.',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.white70,
+                      height: 1.4,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.black26,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.white12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isRussian ? 'ВАШ ID ПОЛЬЗОВАТЕЛЯ' : 'YOUR USER ID',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: Colors.white38,
+                            letterSpacing: 1.2,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                userId,
+                                style: const TextStyle(
+                                  fontFamily: 'monospace',
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFFF2994A),
+                                  letterSpacing: 1.1,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(
+                                Icons.copy_rounded,
+                                size: 20,
+                                color: Colors.white70,
+                              ),
+                              tooltip: isRussian ? 'Скопировать ID' : 'Copy ID',
+                              onPressed: () {
+                                Clipboard.setData(ClipboardData(text: userId));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      isRussian
+                                          ? 'ID скопирован: $userId'
+                                          : 'ID copied: $userId',
+                                    ),
+                                    duration: const Duration(seconds: 2),
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2F80ED),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      onPressed: () => launchUrl(
+                        Uri.parse('https://t.me/santiyastudio'),
+                        mode: LaunchMode.externalApplication,
+                      ),
+                      icon: const Icon(Icons.send_rounded, size: 18),
+                      label: Text(
+                        isRussian ? 'Связаться с поддержкой' : 'Contact Support',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white70,
+                        side: const BorderSide(color: Colors.white24),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      onPressed: onRefresh,
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: Text(
+                        isRussian ? 'Проверить снова' : 'Check Again',
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:uuid/uuid.dart';
 
 enum AppLanguage { russian, english }
 
@@ -74,7 +75,13 @@ class AppSettings {
     this.adaptiveSalaryEnabled = true,
     this.designStyle = AppDesignStyle.none,
     this.shiftAnimationsEnabled = true,
+    this.userId = '',
   });
+
+  static String generateUserId() {
+    final hex = const Uuid().v4().replaceAll('-', '').substring(0, 8).toUpperCase();
+    return 'APERTURE-$hex';
+  }
 
   final AppLanguage language;
   final Currency currency;
@@ -86,6 +93,7 @@ class AppSettings {
   final bool adaptiveSalaryEnabled;
   final AppDesignStyle designStyle;
   final bool shiftAnimationsEnabled;
+  final String userId;
 
   AppSettings copyWith({
     AppLanguage? language,
@@ -98,6 +106,7 @@ class AppSettings {
     bool? adaptiveSalaryEnabled,
     AppDesignStyle? designStyle,
     bool? shiftAnimationsEnabled,
+    String? userId,
   }) => AppSettings(
     language: language ?? this.language,
     currency: currency ?? this.currency,
@@ -111,6 +120,7 @@ class AppSettings {
     designStyle: designStyle ?? this.designStyle,
     shiftAnimationsEnabled:
         shiftAnimationsEnabled ?? this.shiftAnimationsEnabled,
+    userId: userId ?? this.userId,
   );
 
   Map<String, dynamic> toJson() => {
@@ -124,32 +134,38 @@ class AppSettings {
     'adaptiveSalaryEnabled': adaptiveSalaryEnabled,
     'designStyle': designStyle.name,
     'shiftAnimationsEnabled': shiftAnimationsEnabled,
+    'userId': userId,
   };
 
-  factory AppSettings.fromJson(Map<String, dynamic> json) => AppSettings(
-    language: AppLanguage.values.byNameOr(
-      json['language'] as String?,
-      AppLanguage.russian,
-    ),
-    // Backups created before RUB-only mode may contain "usd". Keep them
-    // readable while normalising all monetary values to the supported currency.
-    currency: Currency.rub,
-    themeMode: AppThemeMode.values.byNameOr(
-      json['themeMode'] as String?,
-      AppThemeMode.standard,
-    ),
-    onboardingComplete: json['onboardingComplete'] as bool? ?? false,
-    notificationsEnabled: json['notificationsEnabled'] as bool? ?? true,
-    payoutNotificationsEnabled:
-        json['payoutNotificationsEnabled'] as bool? ?? true,
-    hasRatedProject: json['hasRatedProject'] as bool? ?? false,
-    adaptiveSalaryEnabled: json['adaptiveSalaryEnabled'] as bool? ?? true,
-    designStyle: AppDesignStyle.values.byNameOr(
-      json['designStyle'] as String?,
-      AppDesignStyle.none,
-    ),
-    shiftAnimationsEnabled: json['shiftAnimationsEnabled'] as bool? ?? true,
-  );
+  factory AppSettings.fromJson(Map<String, dynamic> json) {
+    final rawUserId = (json['userId'] as String?)?.trim() ?? '';
+    final assignedUserId = rawUserId.isNotEmpty ? rawUserId : generateUserId();
+    return AppSettings(
+      language: AppLanguage.values.byNameOr(
+        json['language'] as String?,
+        AppLanguage.russian,
+      ),
+      // Backups created before RUB-only mode may contain "usd". Keep them
+      // readable while normalising all monetary values to the supported currency.
+      currency: Currency.rub,
+      themeMode: AppThemeMode.values.byNameOr(
+        json['themeMode'] as String?,
+        AppThemeMode.standard,
+      ),
+      onboardingComplete: json['onboardingComplete'] as bool? ?? false,
+      notificationsEnabled: json['notificationsEnabled'] as bool? ?? true,
+      payoutNotificationsEnabled:
+          json['payoutNotificationsEnabled'] as bool? ?? true,
+      hasRatedProject: json['hasRatedProject'] as bool? ?? false,
+      adaptiveSalaryEnabled: json['adaptiveSalaryEnabled'] as bool? ?? true,
+      designStyle: AppDesignStyle.values.byNameOr(
+        json['designStyle'] as String?,
+        AppDesignStyle.none,
+      ),
+      shiftAnimationsEnabled: json['shiftAnimationsEnabled'] as bool? ?? true,
+      userId: assignedUserId,
+    );
+  }
 }
 
 class Schedule {
@@ -498,12 +514,13 @@ class AppState {
   factory AppState.initial() {
     final now = DateTime.now();
     return AppState(
-      settings: const AppSettings(
+      settings: AppSettings(
         language: AppLanguage.russian,
         currency: Currency.rub,
         themeMode: AppThemeMode.standard,
         onboardingComplete: false,
         notificationsEnabled: true,
+        userId: AppSettings.generateUserId(),
       ),
       schedule: Schedule(
         type: ScheduleType.twoTwo,
