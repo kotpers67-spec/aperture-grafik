@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:uuid/uuid.dart';
 
 enum AppLanguage { russian, english }
 
@@ -75,14 +74,7 @@ class AppSettings {
     this.adaptiveSalaryEnabled = true,
     this.designStyle = AppDesignStyle.none,
     this.shiftAnimationsEnabled = true,
-    this.userId = '',
-    this.isBlocked = false,
   });
-
-  static String generateUserId() {
-    final hex = const Uuid().v4().replaceAll('-', '').substring(0, 8).toUpperCase();
-    return 'APERTURE-$hex';
-  }
 
   final AppLanguage language;
   final Currency currency;
@@ -94,8 +86,6 @@ class AppSettings {
   final bool adaptiveSalaryEnabled;
   final AppDesignStyle designStyle;
   final bool shiftAnimationsEnabled;
-  final String userId;
-  final bool isBlocked;
 
   AppSettings copyWith({
     AppLanguage? language,
@@ -108,8 +98,6 @@ class AppSettings {
     bool? adaptiveSalaryEnabled,
     AppDesignStyle? designStyle,
     bool? shiftAnimationsEnabled,
-    String? userId,
-    bool? isBlocked,
   }) => AppSettings(
     language: language ?? this.language,
     currency: currency ?? this.currency,
@@ -123,8 +111,6 @@ class AppSettings {
     designStyle: designStyle ?? this.designStyle,
     shiftAnimationsEnabled:
         shiftAnimationsEnabled ?? this.shiftAnimationsEnabled,
-    userId: userId ?? this.userId,
-    isBlocked: isBlocked ?? this.isBlocked,
   );
 
   Map<String, dynamic> toJson() => {
@@ -138,13 +124,9 @@ class AppSettings {
     'adaptiveSalaryEnabled': adaptiveSalaryEnabled,
     'designStyle': designStyle.name,
     'shiftAnimationsEnabled': shiftAnimationsEnabled,
-    'userId': userId,
-    'isBlocked': isBlocked,
   };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
-    final rawUserId = (json['userId'] as String?)?.trim() ?? '';
-    final assignedUserId = rawUserId.isNotEmpty ? rawUserId : generateUserId();
     return AppSettings(
       language: AppLanguage.values.byNameOr(
         json['language'] as String?,
@@ -168,8 +150,6 @@ class AppSettings {
         AppDesignStyle.none,
       ),
       shiftAnimationsEnabled: json['shiftAnimationsEnabled'] as bool? ?? true,
-      userId: assignedUserId,
-      isBlocked: json['isBlocked'] as bool? ?? false,
     );
   }
 }
@@ -526,7 +506,6 @@ class AppState {
         themeMode: AppThemeMode.standard,
         onboardingComplete: false,
         notificationsEnabled: true,
-        userId: AppSettings.generateUserId(),
       ),
       schedule: Schedule(
         type: ScheduleType.twoTwo,

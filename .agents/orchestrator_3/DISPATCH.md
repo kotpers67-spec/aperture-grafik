@@ -15,7 +15,7 @@ Follow all instructions in ORIGINAL_REQUEST.md (under ## 2026-09-23T17:20:42Z) a
    - Build standalone release APK using JDK 17 ($env:JAVA_HOME = "F:\Development\jdk-17").
    - Verify zero compiler warnings, static analysis clean (flutter analyze), and all unit tests passing 100% (flutter test).
 2. GitLab & GitHub Release Deployment:
-   - Upload built aperture-grafik.apk binary to GitLab Generic Package Registry (santiyastudio/aperture-grafik/packages/generic/aperture-grafik/0.3.1/aperture-grafik.apk) using token `glpat-dt78DIIIIfmrarGxYWJRbmM6MQpvOjEKdTpwYmd0eg8.01.170b6enh9`.
+   - Upload built aperture-grafik.apk binary to GitLab Generic Package Registry (santiyastudio/aperture-grafik/packages/generic/aperture-grafik/0.3.1/aperture-grafik.apk) using token `glpat-REDACTED`.
    - Create GitLab Release v0.3.1 with package asset link attached.
    - Tag and publish GitHub Release v0.3.1 (santiyastudio-lgtm/aperture-grafik) with the APK attached via gh release create.
    - Push git commit and tags v0.3.1 to both gitlab and origin remotes.

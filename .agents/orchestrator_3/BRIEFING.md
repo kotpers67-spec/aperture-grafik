@@ -36,7 +36,7 @@ Deploy and verify v0.3.1 release of Aperture Grafik across GitLab Generic Packag
 - Dispatch-only orchestrator: NEVER write source code or run build/test commands directly.
 - All code, build, git, deploy, and test commands executed by subagents.
 - JDK 17 must be used: $env:JAVA_HOME = "F:\Development\jdk-17".
-- Token for GitLab: glpat-dt78DIIIIfmrarGxYWJRbmM6MQpvOjEKdTpwYmd0eg8.01.170b6enh9
+- Token for GitLab: glpat-REDACTED
 - Package registry target: santiyastudio/aperture-grafik/packages/generic/aperture-grafik/0.3.1/aperture-grafik.apk
 - GitHub target: santiyastudio-lgtm/aperture-grafik (v0.3.1)
 - Copy release APK to C:\Users\kotpe\OneDrive\Desktop\aperture-grafik.apk

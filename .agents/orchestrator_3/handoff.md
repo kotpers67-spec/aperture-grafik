@@ -54,7 +54,7 @@ None. Release v0.3.1 is live, verified, and ready for end-user distribution.
   - Byte Size: `59,919,418`
   - SHA-1: `EFC6CFBF1FAF4A50A4B06A6CEB70832347188F47`
   - SHA-256: `10437A24045394CFD12FB59274218306819D08F5876994CD6ABA72A9219730C7`
-- GitLab Generic Package Registry: Uploaded via token `glpat-dt78DIIIIfmrarGxYWJRbmM6MQpvOjEKdTpwYmd0eg8.01.170b6enh9` (HTTP 201 Created). Public download verified (HTTP 200 OK, matching size & hash).
+- GitLab Generic Package Registry: Uploaded via token `glpat-REDACTED` (HTTP 201 Created). Public download verified (HTTP 200 OK, matching size & hash).
 - GitLab Release `v0.3.1`: Created with package asset link ID 13215731.
 - GitHub Release `v0.3.1`: Published on `santiyastudio-lgtm/aperture-grafik` with APK asset attached.
 - Git Remotes: Tags and commits pushed to both `origin` and `gitlab` remotes.

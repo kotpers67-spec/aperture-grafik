@@ -13,7 +13,7 @@ Run test/analysis validation, deploy the v0.3.1 release across GitLab Generic Pa
 3. Copy `build\app\outputs\flutter-apk\app-release.apk` to `aperture-grafik-release.apk` at root of project and verify `C:\Users\kotpe\OneDrive\Desktop\aperture-grafik.apk`.
 4. Upload `build\app\outputs\flutter-apk\app-release.apk` to GitLab Generic Package Registry:
    - Endpoint: `https://gitlab.com/api/v4/projects/santiyastudio%2Faperture-grafik/packages/generic/aperture-grafik/0.3.1/aperture-grafik.apk`
-   - Header: `PRIVATE-TOKEN: glpat-dt78DIIIIfmrarGxYWJRbmM6MQpvOjEKdTpwYmd0eg8.01.170b6enh9`
+   - Header: `PRIVATE-TOKEN: glpat-REDACTED`
    - Method: PUT
    - Verify upload response status (201 Created or equivalent).
 5. Create GitLab Release `v0.3.1`:

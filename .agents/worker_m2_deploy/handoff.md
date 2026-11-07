@@ -48,7 +48,7 @@
 - **Target URL**: `https://gitlab.com/api/v4/projects/santiyastudio%2Faperture-grafik/packages/generic/aperture-grafik/0.3.1/aperture-grafik.apk`
 - **Upload Command**:
   ```powershell
-  curl.exe -i --upload-file "F:\Projects\aperture-grafik\build\app\outputs\flutter-apk\app-release.apk" --header "PRIVATE-TOKEN: glpat-dt78DIIIIfmrarGxYWJRbmM6MQpvOjEKdTpwYmd0eg8.01.170b6enh9" "https://gitlab.com/api/v4/projects/santiyastudio%2Faperture-grafik/packages/generic/aperture-grafik/0.3.1/aperture-grafik.apk"
+  curl.exe -i --upload-file "F:\Projects\aperture-grafik\build\app\outputs\flutter-apk\app-release.apk" --header "PRIVATE-TOKEN: glpat-REDACTED" "https://gitlab.com/api/v4/projects/santiyastudio%2Faperture-grafik/packages/generic/aperture-grafik/0.3.1/aperture-grafik.apk"
   ```
 - **Verbatim Upload Response**:
   ```http
