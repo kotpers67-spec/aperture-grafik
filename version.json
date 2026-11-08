@@ -1,6 +1,6 @@
 {
   "version": "v0.3.11",
   "versionCode": 17,
-  "changelog": "• Официальная 3D иконка (календарь и золотые монеты)\n• Автономный режим без сбора User ID и блокировок\n• Автоматическое обновление через GitHub Releases",
+  "changelog": "• Официальная 3D иконка\n• Стабильная работа и обновления",
   "apkDownloadUrl": "https://github.com/kotpers67-spec/aperture-grafik/releases/download/v0.3.11/aperture-grafik.apk"
 }
