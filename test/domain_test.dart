@@ -251,6 +251,75 @@ void main() {
     expect(restored.advanceMode, AdvanceCalculationMode.fixedAmount);
     expect(restored.fixedAdvanceMinor, 1800000);
     expect(restored.hourlyRateMinor, 35000);
+    expect(restored.salaryMode, SalaryCalculationMode.daily);
+  });
+
+  test('combined salary mode sums base shift rate and hourly pay', () {
+    const service = FinanceService();
+    const payment = PaymentSettings(
+      dailyRateMinor: 200000, // 2 000 RUB base
+      hourlyRateMinor: 30000, // 300 RUB/h
+      revenuePercent: 0,
+      advanceDay: 15,
+      salaryDay: 30,
+      salaryMode: SalaryCalculationMode.combined,
+      trackRevenue: false,
+    );
+
+    // 8 hours: 200000 + 8 * 30000 = 440000 (4 400 RUB)
+    expect(
+      service.earnings(
+        revenueMinor: 0,
+        payment: payment,
+        workedHours: 8.0,
+      ),
+      440000,
+    );
+  });
+
+  test('custom hourly rate overrides default payment hourly rate', () {
+    const service = FinanceService();
+    const payment = PaymentSettings(
+      dailyRateMinor: 0,
+      hourlyRateMinor: 30000, // 300 RUB/h default
+      revenuePercent: 0,
+      advanceDay: 15,
+      salaryDay: 30,
+      salaryMode: SalaryCalculationMode.hourly,
+      trackRevenue: false,
+    );
+
+    // Shift has custom hourly rate 500 RUB/h (50000 minor)
+    expect(
+      service.earnings(
+        revenueMinor: 0,
+        payment: payment,
+        customHourlyRateMinor: 50000,
+        workedHours: 10.0,
+      ),
+      500000,
+    );
+  });
+
+  test('Shift model serializes and restores customHourlyRateMinor', () {
+    final shift = Shift(
+      id: 'sh_test',
+      date: DateTime(2026, 11, 8),
+      kind: ShiftKind.scheduled,
+      actualStart: DateTime(2026, 11, 8, 9),
+      actualEnd: DateTime(2026, 11, 8, 19),
+      colleagueIds: const ['c1'],
+      revenueMinor: 0,
+      earningsMinor: 350000,
+      comment: 'Hourly shift',
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+      customHourlyRateMinor: 35000,
+    );
+    final json = shift.toJson();
+    final restored = Shift.fromJson(json);
+    expect(restored.customHourlyRateMinor, 35000);
+    expect(restored.durationHours, 10.0);
   });
 
   test(

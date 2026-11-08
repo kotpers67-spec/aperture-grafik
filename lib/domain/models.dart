@@ -35,6 +35,8 @@ enum PayoutKind { advance, salary }
 
 enum AdvanceCalculationMode { percent, shiftsWorked, fixedAmount, hourly }
 
+enum SalaryCalculationMode { daily, hourly, combined }
+
 extension SafeEnumByName<T extends Enum> on Iterable<T> {
   T byNameOr(String? name, T fallback) {
     if (name == null) return fallback;
@@ -224,6 +226,7 @@ class PaymentSettings {
     this.advanceMode = AdvanceCalculationMode.percent,
     this.fixedAdvanceMinor = 0,
     this.hourlyRateMinor = 0,
+    this.salaryMode = SalaryCalculationMode.daily,
   });
 
   final int dailyRateMinor;
@@ -235,6 +238,7 @@ class PaymentSettings {
   final AdvanceCalculationMode advanceMode;
   final int fixedAdvanceMinor;
   final int hourlyRateMinor;
+  final SalaryCalculationMode salaryMode;
 
   int get salaryPercent => 100 - advancePercent;
 
@@ -248,6 +252,7 @@ class PaymentSettings {
     AdvanceCalculationMode? advanceMode,
     int? fixedAdvanceMinor,
     int? hourlyRateMinor,
+    SalaryCalculationMode? salaryMode,
   }) => PaymentSettings(
     dailyRateMinor: dailyRateMinor ?? this.dailyRateMinor,
     revenuePercent: revenuePercent ?? this.revenuePercent,
@@ -258,6 +263,7 @@ class PaymentSettings {
     advanceMode: advanceMode ?? this.advanceMode,
     fixedAdvanceMinor: fixedAdvanceMinor ?? this.fixedAdvanceMinor,
     hourlyRateMinor: hourlyRateMinor ?? this.hourlyRateMinor,
+    salaryMode: salaryMode ?? this.salaryMode,
   );
 
   Map<String, dynamic> toJson() => {
@@ -270,6 +276,7 @@ class PaymentSettings {
     'advanceMode': advanceMode.name,
     'fixedAdvanceMinor': fixedAdvanceMinor,
     'hourlyRateMinor': hourlyRateMinor,
+    'salaryMode': salaryMode.name,
   };
 
   factory PaymentSettings.fromJson(Map<String, dynamic> json) =>
@@ -289,6 +296,16 @@ class PaymentSettings {
         ),
         fixedAdvanceMinor: (json['fixedAdvanceMinor'] as num?)?.toInt() ?? 0,
         hourlyRateMinor: (json['hourlyRateMinor'] as num?)?.toInt() ?? 0,
+        salaryMode: json['salaryMode'] != null
+            ? SalaryCalculationMode.values.byNameOr(
+                json['salaryMode'] as String?,
+                SalaryCalculationMode.daily,
+              )
+            : ((json['advanceMode'] == 'hourly' ||
+                    ((json['hourlyRateMinor'] as num?)?.toInt() ?? 0) > 0 &&
+                        ((json['dailyRateMinor'] as num?)?.toInt() ?? 0) == 0)
+                ? SalaryCalculationMode.hourly
+                : SalaryCalculationMode.daily),
       );
 }
 
@@ -348,6 +365,7 @@ class Shift {
     required this.updatedAt,
     this.customRevenuePercent,
     this.customDailyRateMinor,
+    this.customHourlyRateMinor,
     this.manualEarningsMinor,
     this.adaptiveEarningsOriginalMinor,
   });
@@ -365,6 +383,7 @@ class Shift {
   final DateTime updatedAt;
   final double? customRevenuePercent;
   final int? customDailyRateMinor;
+  final int? customHourlyRateMinor;
   final int? manualEarningsMinor;
 
   /// Original earnings captured before an adaptive payout recalculation.
@@ -387,6 +406,7 @@ class Shift {
     DateTime? updatedAt,
     double? customRevenuePercent,
     int? customDailyRateMinor,
+    int? customHourlyRateMinor,
     int? manualEarningsMinor,
     bool clearAdaptiveEarningsOriginal = false,
     int? adaptiveEarningsOriginalMinor,
@@ -404,6 +424,8 @@ class Shift {
     updatedAt: updatedAt ?? this.updatedAt,
     customRevenuePercent: customRevenuePercent ?? this.customRevenuePercent,
     customDailyRateMinor: customDailyRateMinor ?? this.customDailyRateMinor,
+    customHourlyRateMinor:
+        customHourlyRateMinor ?? this.customHourlyRateMinor,
     manualEarningsMinor: manualEarningsMinor ?? this.manualEarningsMinor,
     adaptiveEarningsOriginalMinor: clearAdaptiveEarningsOriginal
         ? null
@@ -426,6 +448,8 @@ class Shift {
       'customRevenuePercent': customRevenuePercent,
     if (customDailyRateMinor != null)
       'customDailyRateMinor': customDailyRateMinor,
+    if (customHourlyRateMinor != null)
+      'customHourlyRateMinor': customHourlyRateMinor,
     if (manualEarningsMinor != null) 'manualEarningsMinor': manualEarningsMinor,
     if (adaptiveEarningsOriginalMinor != null)
       'adaptiveEarningsOriginalMinor': adaptiveEarningsOriginalMinor,
@@ -450,6 +474,7 @@ class Shift {
     updatedAt: DateTime.parse(json['updatedAt'] as String),
     customRevenuePercent: (json['customRevenuePercent'] as num?)?.toDouble(),
     customDailyRateMinor: (json['customDailyRateMinor'] as num?)?.toInt(),
+    customHourlyRateMinor: (json['customHourlyRateMinor'] as num?)?.toInt(),
     manualEarningsMinor: (json['manualEarningsMinor'] as num?)?.toInt(),
     adaptiveEarningsOriginalMinor:
         (json['adaptiveEarningsOriginalMinor'] as num?)?.toInt(),

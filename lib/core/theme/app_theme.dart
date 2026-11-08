@@ -12,48 +12,48 @@ class AppTheme {
   }) {
     final palette = switch (mode) {
       AppThemeMode.standard => const _Palette(
-        seed: Color(0xFF6F4E37),
-        surface: Color(0xFFFFF9F2),
+        seed: Color(0xFF334155),
+        surface: Color(0xFFF8FAFC),
         brightness: Brightness.light,
       ),
       AppThemeMode.laboratory => const _Palette(
-        seed: Color(0xFF8A5A3B),
-        surface: Color(0xFFFFFCF7),
+        seed: Color(0xFF8D6E63),
+        surface: Color(0xFFFAF8F5),
         brightness: Brightness.light,
       ),
       AppThemeMode.aperture => const _Palette(
-        seed: Color(0xFFB85F24),
-        surface: Color(0xFFFFF8F0),
+        seed: Color(0xFFD97706),
+        surface: Color(0xFFFFFBEB),
         brightness: Brightness.light,
       ),
       AppThemeMode.chamber => const _Palette(
-        seed: Color(0xFFD3A06C),
-        surface: Color(0xFF17120F),
+        seed: Color(0xFF94A3B8),
+        surface: Color(0xFF0F172A),
         brightness: Brightness.dark,
       ),
       AppThemeMode.ocean => const _Palette(
-        seed: Color(0xFF167A91),
-        surface: Color(0xFFF0FAFC),
+        seed: Color(0xFF0284C7),
+        surface: Color(0xFFF0F9FF),
         brightness: Brightness.light,
       ),
       AppThemeMode.forest => const _Palette(
-        seed: Color(0xFF46734D),
-        surface: Color(0xFFF4F9F1),
+        seed: Color(0xFF059669),
+        surface: Color(0xFFF0FDF4),
         brightness: Brightness.light,
       ),
       AppThemeMode.sakura => const _Palette(
-        seed: Color(0xFFA64E78),
-        surface: Color(0xFFFFF5F8),
+        seed: Color(0xFFE11D48),
+        surface: Color(0xFFFFF1F2),
         brightness: Brightness.light,
       ),
       AppThemeMode.sunset => const _Palette(
-        seed: Color(0xFFC2543C),
-        surface: Color(0xFFFFF6F0),
+        seed: Color(0xFFEA580C),
+        surface: Color(0xFFFFF7ED),
         brightness: Brightness.light,
       ),
       AppThemeMode.slate => const _Palette(
-        seed: Color(0xFF56677C),
-        surface: Color(0xFFF3F6FA),
+        seed: Color(0xFF4F46E5),
+        surface: Color(0xFFEEF2FF),
         brightness: Brightness.light,
       ),
     };

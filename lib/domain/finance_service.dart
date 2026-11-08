@@ -36,19 +36,35 @@ class FinanceService {
     required PaymentSettings payment,
     double? customRevenuePercent,
     int? customDailyRateMinor,
+    int? customHourlyRateMinor,
     int? manualEarningsMinor,
     double? workedHours,
   }) {
     if (manualEarningsMinor != null) {
       return manualEarningsMinor;
     }
+    final hours = workedHours ?? 0.0;
+    final int effectiveHourlyRate =
+        customHourlyRateMinor ?? payment.hourlyRateMinor;
+    final int effectiveDailyRate =
+        customDailyRateMinor ?? payment.dailyRateMinor;
+
     final int baseRate;
-    if (payment.advanceMode == AdvanceCalculationMode.hourly &&
-        (workedHours != null || payment.hourlyRateMinor > 0)) {
-      final hours = workedHours ?? 0.0;
-      baseRate = (hours * payment.hourlyRateMinor).round();
-    } else {
-      baseRate = customDailyRateMinor ?? payment.dailyRateMinor;
+    switch (payment.salaryMode) {
+      case SalaryCalculationMode.hourly:
+        baseRate = (hours * effectiveHourlyRate).round();
+        break;
+      case SalaryCalculationMode.combined:
+        baseRate = effectiveDailyRate + (hours * effectiveHourlyRate).round();
+        break;
+      case SalaryCalculationMode.daily:
+        if (payment.advanceMode == AdvanceCalculationMode.hourly &&
+            effectiveHourlyRate > 0) {
+          baseRate = (hours * effectiveHourlyRate).round();
+        } else {
+          baseRate = effectiveDailyRate;
+        }
+        break;
     }
 
     if (!payment.trackRevenue) {

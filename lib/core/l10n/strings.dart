@@ -90,4 +90,24 @@ class Strings {
   String get fixedAdvanceLabel =>
       isRu ? 'Фиксированный аванс' : 'Fixed advance';
   String get hourlyRateLabel => isRu ? 'Ставка в час' : 'Hourly rate';
+  String get salaryModeLabel =>
+      isRu ? 'Модель оплаты смены' : 'Shift pay model';
+  String get salaryModeDaily =>
+      isRu ? 'Оклад за смену' : 'Shift flat rate';
+  String get salaryModeHourly =>
+      isRu ? 'Почасовая оплата (часы × ₽/ч)' : 'Hourly rate (hours × rate)';
+  String get salaryModeCombined =>
+      isRu ? 'Оклад + почасовая' : 'Base rate + hourly';
+  String get customHourlyRateLabel =>
+      isRu ? 'Своя ставка в час (₽/ч)' : 'Shift hourly rate (₽/h)';
+  String get mySchedule => isRu ? 'Мой график' : 'My schedule';
+  String get workShiftsKeptSimple =>
+      isRu ? 'Смены и график — спокойно и по делу' : 'Work shifts, kept simple';
+  String get scheduleSummarySub => isRu
+      ? 'График, смены, расчет зарплаты и аванса под рукой.'
+      : 'Your schedule, shifts, salary, and earnings in one place.';
+  String get shiftTimeAndTeam =>
+      isRu ? 'Время и состав смены' : 'Shift time and team';
+  String get shiftTimeTeamRevenue =>
+      isRu ? 'Время, команда и выручка за день' : 'Time, team, and today’s revenue';
 }

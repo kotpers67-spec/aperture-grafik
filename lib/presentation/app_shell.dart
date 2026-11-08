@@ -24,6 +24,28 @@ import '../domain/schedule_service.dart';
 import '../domain/update_backup_service.dart';
 import '../domain/update_service.dart';
 
+String _paymentSubtitle(AppState data, Strings strings) {
+  final pay = data.payment;
+  final String rateStr;
+  switch (pay.salaryMode) {
+    case SalaryCalculationMode.hourly:
+      rateStr = '${money(data, pay.hourlyRateMinor)}/ч';
+      break;
+    case SalaryCalculationMode.daily:
+      rateStr = money(data, pay.dailyRateMinor);
+      break;
+    case SalaryCalculationMode.combined:
+      rateStr =
+          '${money(data, pay.dailyRateMinor)} + ${money(data, pay.hourlyRateMinor)}/ч';
+      break;
+  }
+  final revStr = pay.trackRevenue ? ' + ${pay.revenuePercent}%' : '';
+  if (strings.isRu) {
+    return '$rateStr$revStr · Аванс: ${pay.advanceDay}-го, ЗП: ${pay.salaryDay}-го';
+  }
+  return '$rateStr$revStr · Adv: day ${pay.advanceDay}, Sal: day ${pay.salaryDay}';
+}
+
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
 
@@ -388,7 +410,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             shape: BoxShape.circle,
           ),
           child: Icon(
-            Icons.coffee_rounded,
+            Icons.schedule_rounded,
             size: 70,
             color: Theme.of(context).colorScheme.onPrimaryContainer,
           ),
@@ -403,17 +425,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         ),
         const SizedBox(height: 10),
         Text(
-          isRu
-              ? 'Смены в кофейне — спокойно и по делу'
-              : 'Coffee-shop shifts, kept simple',
+          isRu ? 'Смены и график — спокойно и по делу' : 'Work shifts, kept simple',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.headlineSmall,
         ),
         const SizedBox(height: 10),
         Text(
-          isRu
-              ? 'График, команда, выручка и заработок всегда под рукой.'
-              : 'Your schedule, team, revenue, and earnings in one place.',
+          isRu ? 'График, смены, расчет зарплаты и аванса под рукой.' : 'Your schedule, shifts, salary, and earnings in one place.',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyLarge?.copyWith(
             color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -708,7 +726,7 @@ class HomePage extends ConsumerWidget {
                     ),
                   ),
           ),
-          if (recommendation != null) ...[
+          if (data.payment.trackRevenue && recommendation != null) ...[
             const SizedBox(height: 22),
             _SectionTitle(
               strings.isRu ? 'Ориентир на сегодня' : 'Today’s outlook',
@@ -1154,7 +1172,7 @@ class ProfilePage extends ConsumerWidget {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
         children: [
-          _CoffeeProfileHeader(data: data, isRussian: strings.isRu),
+          _WorkProfileHeader(data: data, isRussian: strings.isRu),
           const SizedBox(height: 22),
           _SectionTitle(strings.isRu ? 'Настройки' : 'Settings'),
           _SettingsTile(
@@ -1233,9 +1251,7 @@ class ProfilePage extends ConsumerWidget {
           _SettingsTile(
             icon: Icons.payments_outlined,
             title: strings.isRu ? 'Ставка и выплаты' : 'Pay and payouts',
-            subtitle: strings.isRu
-                ? '${money(data, data.payment.dailyRateMinor)} + ${data.payment.revenuePercent}% · Аванс: ${data.payment.advanceDay}-го, ЗП: ${data.payment.salaryDay}-го'
-                : '${money(data, data.payment.dailyRateMinor)} + ${data.payment.revenuePercent}% · Adv: day ${data.payment.advanceDay}, Sal: day ${data.payment.salaryDay}',
+            subtitle: _paymentSubtitle(data, strings),
             onTap: () => _editPayment(context, data, controller),
           ),
           _SettingsTile(
@@ -2502,6 +2518,11 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
         ? (widget.existing!.customDailyRateMinor! / 100).toStringAsFixed(2)
         : '',
   );
+  late final TextEditingController customHourlyRate = TextEditingController(
+    text: widget.existing?.customHourlyRateMinor != null
+        ? (widget.existing!.customHourlyRateMinor! / 100).toStringAsFixed(2)
+        : '',
+  );
   late DateTime start =
       widget.existing?.actualStart ??
       const ScheduleService().startAt(widget.data.schedule, widget.date);
@@ -2516,6 +2537,7 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
     revenue.addListener(_onFieldChanged);
     customPercent.addListener(_onFieldChanged);
     customDailyRate.addListener(_onFieldChanged);
+    customHourlyRate.addListener(_onFieldChanged);
   }
 
   void _onFieldChanged() {
@@ -2527,10 +2549,12 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
     revenue.removeListener(_onFieldChanged);
     customPercent.removeListener(_onFieldChanged);
     customDailyRate.removeListener(_onFieldChanged);
+    customHourlyRate.removeListener(_onFieldChanged);
     revenue.dispose();
     comment.dispose();
     customPercent.dispose();
     customDailyRate.dispose();
+    customHourlyRate.dispose();
     super.dispose();
   }
 
@@ -2571,6 +2595,10 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
         ? null
         : ((num.tryParse(customDailyRate.text.replaceAll(',', '.')) ?? 0) * 100)
               .round();
+    final parsedCustomHourlyRate = customHourlyRate.text.trim().isEmpty
+        ? null
+        : ((num.tryParse(customHourlyRate.text.replaceAll(',', '.')) ?? 0) * 100)
+              .round();
 
     final workedMinutes = end.difference(start).inMinutes;
     final workedHours = workedMinutes < 0 ? 0.0 : workedMinutes / 60.0;
@@ -2579,6 +2607,7 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
       payment: widget.data.payment,
       customRevenuePercent: parsedCustomPercent,
       customDailyRateMinor: parsedCustomRate,
+      customHourlyRateMinor: parsedCustomHourlyRate,
       workedHours: workedHours,
     );
 
@@ -2700,6 +2729,20 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
                   ),
                   const SizedBox(height: 12),
                 ],
+                if (widget.data.payment.salaryMode != SalaryCalculationMode.daily) ...[
+                  TextField(
+                    controller: customHourlyRate,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: strings.customHourlyRateLabel,
+                      prefixIcon: const Icon(Icons.schedule_rounded),
+                      suffixText: '₽/ч',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 TextField(
                   controller: customDailyRate,
                   keyboardType: const TextInputType.numberWithOptions(
@@ -2810,7 +2853,7 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
                             100)
                         .round();
 
-              if (percent != null && percent > 0 && amount <= 0) {
+              if (widget.data.payment.trackRevenue && percent != null && percent > 0 && amount <= 0) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(strings.revenueRequiredForPercentNotice),
@@ -2831,6 +2874,9 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
                     comment: comment.text,
                     customRevenuePercent: widget.data.payment.trackRevenue ? percent : null,
                     customDailyRateMinor: rate,
+                    customHourlyRateMinor: customHourlyRate.text.trim().isEmpty
+                        ? null
+                        : ((num.tryParse(customHourlyRate.text.replaceAll(',', '.')) ?? 0) * 100).round(),
                   );
               if (context.mounted) Navigator.pop(context);
             },
@@ -2931,7 +2977,7 @@ class _HomeGreeting extends StatelessWidget {
             color: scheme.secondaryContainer,
             borderRadius: BorderRadius.circular(18),
           ),
-          child: Icon(Icons.coffee_rounded, color: scheme.onSecondaryContainer),
+          child: Icon(Icons.work_outline_rounded, color: scheme.onSecondaryContainer),
         ),
       ],
     );
@@ -2978,7 +3024,7 @@ class _HeroCard extends StatelessWidget {
               right: -14,
               bottom: -22,
               child: Icon(
-                Icons.coffee_rounded,
+                Icons.schedule_rounded,
                 size: 126,
                 color: scheme.onPrimary.withValues(alpha: .11),
               ),
@@ -3096,6 +3142,7 @@ class _InlineShiftCompletionFormState
   late final TextEditingController _comment = TextEditingController();
   late final TextEditingController _customPercent = TextEditingController();
   late final TextEditingController _customDailyRate = TextEditingController();
+  late final TextEditingController _customHourlyRate = TextEditingController();
   late DateTime _start = const ScheduleService().startAt(
     widget.data.schedule,
     widget.date,
@@ -3112,6 +3159,7 @@ class _InlineShiftCompletionFormState
     _revenue.addListener(_onFieldChanged);
     _customPercent.addListener(_onFieldChanged);
     _customDailyRate.addListener(_onFieldChanged);
+    _customHourlyRate.addListener(_onFieldChanged);
   }
 
   void _onFieldChanged() {
@@ -3123,10 +3171,12 @@ class _InlineShiftCompletionFormState
     _revenue.removeListener(_onFieldChanged);
     _customPercent.removeListener(_onFieldChanged);
     _customDailyRate.removeListener(_onFieldChanged);
+    _customHourlyRate.removeListener(_onFieldChanged);
     _revenue.dispose();
     _comment.dispose();
     _customPercent.dispose();
     _customDailyRate.dispose();
+    _customHourlyRate.dispose();
     super.dispose();
   }
 
@@ -3164,8 +3214,13 @@ class _InlineShiftCompletionFormState
         : ((num.tryParse(_customDailyRate.text.replaceAll(',', '.')) ?? 0) *
                   100)
               .round();
+    final hourly = _customHourlyRate.text.trim().isEmpty
+        ? null
+        : ((num.tryParse(_customHourlyRate.text.replaceAll(',', '.')) ?? 0) *
+                  100)
+              .round();
 
-    if (percent != null && percent > 0 && revenueMinor <= 0) {
+    if (widget.data.payment.trackRevenue && percent != null && percent > 0 && revenueMinor <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -3189,6 +3244,7 @@ class _InlineShiftCompletionFormState
           comment: _comment.text,
           customRevenuePercent: widget.data.payment.trackRevenue ? percent : null,
           customDailyRateMinor: rate,
+          customHourlyRateMinor: hourly,
         );
   }
 
@@ -3206,6 +3262,11 @@ class _InlineShiftCompletionFormState
         : ((num.tryParse(_customDailyRate.text.replaceAll(',', '.')) ?? 0) *
                   100)
               .round();
+    final parsedCustomHourlyRate = _customHourlyRate.text.trim().isEmpty
+        ? null
+        : ((num.tryParse(_customHourlyRate.text.replaceAll(',', '.')) ?? 0) *
+                  100)
+              .round();
 
     final cardMins = _end.difference(_start).inMinutes;
     final cardHours = cardMins < 0 ? 0.0 : cardMins / 60.0;
@@ -3214,6 +3275,7 @@ class _InlineShiftCompletionFormState
       payment: widget.data.payment,
       customRevenuePercent: parsedCustomPercent,
       customDailyRateMinor: parsedCustomRate,
+      customHourlyRateMinor: parsedCustomHourlyRate,
       workedHours: cardHours,
     );
 
@@ -3254,9 +3316,9 @@ class _InlineShiftCompletionFormState
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        strings.isRu
-                            ? 'Время, команда и выручка за день'
-                            : 'Time, team, and today’s revenue',
+                        widget.data.payment.trackRevenue
+                            ? strings.shiftTimeTeamRevenue
+                            : strings.shiftTimeAndTeam,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
@@ -3359,6 +3421,20 @@ class _InlineShiftCompletionFormState
                         labelText: strings.customPercentLabel,
                         prefixIcon: const Icon(Icons.percent_rounded),
                         suffixText: '%',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (widget.data.payment.salaryMode != SalaryCalculationMode.daily) ...[
+                    TextField(
+                      controller: _customHourlyRate,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: strings.customHourlyRateLabel,
+                        prefixIcon: const Icon(Icons.schedule_rounded),
+                        suffixText: '₽/ч',
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -3703,7 +3779,7 @@ class _HistoryRow extends StatelessWidget {
           borderRadius: BorderRadius.circular(15),
         ),
         child: Icon(
-          Icons.coffee_outlined,
+          data.payment.trackRevenue ? Icons.payments_outlined : Icons.schedule_rounded,
           color: Theme.of(context).colorScheme.onSecondaryContainer,
         ),
       ),
@@ -3980,8 +4056,8 @@ class _ThemeDot extends StatelessWidget {
   );
 }
 
-class _CoffeeProfileHeader extends StatelessWidget {
-  const _CoffeeProfileHeader({required this.data, required this.isRussian});
+class _WorkProfileHeader extends StatelessWidget {
+  const _WorkProfileHeader({required this.data, required this.isRussian});
 
   final AppState data;
   final bool isRussian;
@@ -4004,7 +4080,7 @@ class _CoffeeProfileHeader extends StatelessWidget {
               color: scheme.secondary,
               shape: BoxShape.circle,
             ),
-            child: Icon(Icons.coffee_rounded, color: scheme.onSecondary),
+            child: Icon(Icons.badge_outlined, color: scheme.onSecondary),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -4012,7 +4088,7 @@ class _CoffeeProfileHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isRussian ? 'Моя кофейня' : 'My coffee shop',
+                  isRussian ? 'Мой график' : 'My schedule',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     color: scheme.onSecondaryContainer,
                   ),
@@ -4451,16 +4527,23 @@ Future<void> _editPayment(
   final hourlyRate = TextEditingController(
     text: (data.payment.hourlyRateMinor / 100).toStringAsFixed(2),
   );
-  final percent = TextEditingController(text: '${data.payment.revenuePercent}');
-  final advanceDay = TextEditingController(text: '${data.payment.advanceDay}');
-  final salaryDay = TextEditingController(text: '${data.payment.salaryDay}');
+  final percent = TextEditingController(
+    text: data.payment.revenuePercent.toString(),
+  );
+  final advanceDay = TextEditingController(
+    text: data.payment.advanceDay.toString(),
+  );
+  final salaryDay = TextEditingController(
+    text: data.payment.salaryDay.toString(),
+  );
   final advancePercent = TextEditingController(
-    text: '${data.payment.advancePercent}',
+    text: data.payment.advancePercent.toString(),
   );
   final fixedAdvance = TextEditingController(
     text: (data.payment.fixedAdvanceMinor / 100).toStringAsFixed(2),
   );
   bool trackRevenue = data.payment.trackRevenue;
+  SalaryCalculationMode salaryMode = data.payment.salaryMode;
   AdvanceCalculationMode advanceMode = data.payment.advanceMode;
 
   final result = await showDialog<PaymentSettings>(
@@ -4488,6 +4571,79 @@ Future<void> _editPayment(
                   setDialogState(() => trackRevenue = val);
                 },
               ),
+              const Divider(height: 20),
+              Text(
+                strings.salaryModeLabel,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<SalaryCalculationMode>(
+                initialValue: salaryMode,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                items: [
+                  DropdownMenuItem(
+                    value: SalaryCalculationMode.daily,
+                    child: Text(strings.salaryModeDaily),
+                  ),
+                  DropdownMenuItem(
+                    value: SalaryCalculationMode.hourly,
+                    child: Text(strings.salaryModeHourly),
+                  ),
+                  DropdownMenuItem(
+                    value: SalaryCalculationMode.combined,
+                    child: Text(strings.salaryModeCombined),
+                  ),
+                ],
+                onChanged: (mode) {
+                  if (mode != null) {
+                    setDialogState(() => salaryMode = mode);
+                  }
+                },
+              ),
+              const SizedBox(height: 14),
+              if (salaryMode == SalaryCalculationMode.daily ||
+                  salaryMode == SalaryCalculationMode.combined) ...[
+                TextField(
+                  controller: rate,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: strings.isRu ? 'Оклад за смену' : 'Shift rate',
+                    suffixText: '₽',
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (salaryMode == SalaryCalculationMode.hourly ||
+                  salaryMode == SalaryCalculationMode.combined) ...[
+                TextField(
+                  controller: hourlyRate,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: strings.hourlyRateLabel,
+                    suffixText: '₽/ч',
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (trackRevenue) ...[
+                TextField(
+                  controller: percent,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: strings.isRu ? 'Процент от выручки' : 'Revenue percent',
+                    suffixText: '%',
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               const Divider(height: 20),
               Text(
                 strings.advanceModeLabel,
@@ -4530,54 +4686,12 @@ Future<void> _editPayment(
                 },
               ),
               const SizedBox(height: 14),
-              if (advanceMode == AdvanceCalculationMode.hourly) ...[
-                TextField(
-                  controller: hourlyRate,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: InputDecoration(
-                    labelText: strings.hourlyRateLabel,
-                    suffixText: '₽/ч',
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ] else ...[
-                TextField(
-                  controller: rate,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: InputDecoration(
-                    labelText: strings.isRu ? 'Дневная ставка' : 'Daily rate',
-                    suffixText: '₽',
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
-              if (trackRevenue) ...[
-                TextField(
-                  controller: percent,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: InputDecoration(
-                    labelText: strings.isRu
-                        ? 'Процент от выручки'
-                        : 'Revenue percent',
-                    suffixText: '%',
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
               if (advanceMode == AdvanceCalculationMode.percent) ...[
                 TextField(
                   controller: advancePercent,
                   keyboardType: TextInputType.number,
                   decoration: InputDecoration(
-                    labelText: strings.isRu
-                        ? 'Аванс от заработка'
-                        : 'Advance share',
+                    labelText: strings.isRu ? 'Аванс от заработка' : 'Advance share',
                     suffixText: '%',
                     helperText: strings.isRu
                         ? 'Зарплата автоматически: ${100 - (int.tryParse(advancePercent.text.trim()) ?? data.payment.advancePercent)}%'
@@ -4588,9 +4702,7 @@ Future<void> _editPayment(
               ] else if (advanceMode == AdvanceCalculationMode.fixedAmount) ...[
                 TextField(
                   controller: fixedAdvance,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   decoration: InputDecoration(
                     labelText: strings.fixedAdvanceLabel,
                     suffixText: '₽',
@@ -4618,15 +4730,31 @@ Future<void> _editPayment(
                   ),
                 ),
                 const SizedBox(height: 12),
+              ] else if (advanceMode == AdvanceCalculationMode.hourly) ...[
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    strings.isRu
+                        ? 'Аванс рассчитывается по отработанным часам со смен с 1 по день аванса. Остаток месяца — в зарплату.'
+                        : 'Advance calculates hours worked up to advance day. Remainder pays on salary day.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
               ],
               TextField(
                 controller: advanceDay,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   labelText: strings.advanceDayLabel,
-                  helperText: strings.isRu
-                      ? 'Число месяца (1–31)'
-                      : 'Day of month (1–31)',
+                  helperText: strings.isRu ? 'Число месяца (1–31)' : 'Day of month (1–31)',
                 ),
               ),
               const SizedBox(height: 12),
@@ -4635,9 +4763,7 @@ Future<void> _editPayment(
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   labelText: strings.salaryDayLabel,
-                  helperText: strings.isRu
-                      ? 'Число месяца (1–31)'
-                      : 'Day of month (1–31)',
+                  helperText: strings.isRu ? 'Число месяца (1–31)' : 'Day of month (1–31)',
                 ),
               ),
             ],
@@ -4650,35 +4776,23 @@ Future<void> _editPayment(
           ),
           FilledButton(
             onPressed: () {
-              final parsedAdv =
-                  int.tryParse(advanceDay.text.trim()) ?? data.payment.advanceDay;
-              final parsedSal =
-                  int.tryParse(salaryDay.text.trim()) ?? data.payment.salaryDay;
+              final parsedAdv = int.tryParse(advanceDay.text.trim()) ?? data.payment.advanceDay;
+              final parsedSal = int.tryParse(salaryDay.text.trim()) ?? data.payment.salaryDay;
               Navigator.pop(
                 context,
                 PaymentSettings(
-                  dailyRateMinor:
-                      ((num.tryParse(rate.text.replaceAll(',', '.')) ?? 0) * 100)
-                          .round(),
-                  revenuePercent:
-                      num.tryParse(
-                        percent.text.replaceAll(',', '.'),
-                      )?.toDouble() ??
-                      0,
+                  dailyRateMinor: ((num.tryParse(rate.text.replaceAll(',', '.')) ?? 0) * 100).round(),
+                  hourlyRateMinor: ((num.tryParse(hourlyRate.text.replaceAll(',', '.')) ?? 0) * 100).round(),
+                  salaryMode: salaryMode,
+                  revenuePercent: trackRevenue
+                      ? (num.tryParse(percent.text.replaceAll(',', '.'))?.toDouble() ?? 0)
+                      : 0,
                   advanceDay: parsedAdv.clamp(1, 31),
                   salaryDay: parsedSal.clamp(1, 31),
-                  advancePercent:
-                      (int.tryParse(advancePercent.text.trim()) ??
-                              data.payment.advancePercent)
-                          .clamp(0, 100),
+                  advancePercent: (int.tryParse(advancePercent.text.trim()) ?? data.payment.advancePercent).clamp(0, 100),
                   trackRevenue: trackRevenue,
                   advanceMode: advanceMode,
-                  fixedAdvanceMinor:
-                      ((num.tryParse(fixedAdvance.text.replaceAll(',', '.')) ?? 0) * 100)
-                          .round(),
-                  hourlyRateMinor:
-                      ((num.tryParse(hourlyRate.text.replaceAll(',', '.')) ?? 0) * 100)
-                          .round(),
+                  fixedAdvanceMinor: ((num.tryParse(fixedAdvance.text.replaceAll(',', '.')) ?? 0) * 100).round(),
                 ),
               );
             },
@@ -4946,23 +5060,23 @@ String _scheduleDescription(ScheduleType type, bool ru) => switch (type) {
   ScheduleType.weekdays => ru ? 'Выберите нужные дни' : 'Choose your days',
 };
 String _themeName(AppThemeMode mode, bool ru) => switch (mode) {
-  AppThemeMode.standard => ru ? 'Кофейная' : 'Coffee',
-  AppThemeMode.laboratory => ru ? 'Молочный латте' : 'Milky latte',
-  AppThemeMode.aperture => ru ? 'Карамельный раф' : 'Caramel roast',
-  AppThemeMode.chamber => ru ? 'Ночной эспрессо' : 'Night espresso',
+  AppThemeMode.standard => ru ? 'Графит' : 'Graphite',
+  AppThemeMode.laboratory => ru ? 'Песок' : 'Sand',
+  AppThemeMode.aperture => ru ? 'Янтарь' : 'Amber',
+  AppThemeMode.chamber => ru ? 'Обсидиан' : 'Obsidian',
   AppThemeMode.ocean => ru ? 'Океан' : 'Ocean',
-  AppThemeMode.forest => ru ? 'Лесная зелень' : 'Forest',
-  AppThemeMode.sakura => ru ? 'Сакура' : 'Sakura',
-  AppThemeMode.sunset => ru ? 'Тёплый закат' : 'Warm sunset',
-  AppThemeMode.slate => ru ? 'Сланцевый' : 'Slate',
+  AppThemeMode.forest => ru ? 'Хвоя' : 'Forest',
+  AppThemeMode.sakura => ru ? 'Брусника' : 'Berry',
+  AppThemeMode.sunset => ru ? 'Терракота' : 'Terracotta',
+  AppThemeMode.slate => ru ? 'Индиго' : 'Indigo',
 };
 
 String _designStyleName(AppDesignStyle style, bool ru) => switch (style) {
-  AppDesignStyle.none => ru ? 'Кофейная классика' : 'Coffee classic',
-  AppDesignStyle.glass => ru ? 'Хрустальное стекло' : 'Crystal glass',
-  AppDesignStyle.neon => ru ? 'Неоновая ночь' : 'Neon night',
-  AppDesignStyle.minimal => ru ? 'Тихий минимализм' : 'Quiet minimal',
+  AppDesignStyle.none => ru ? 'Классика' : 'Classic',
+  AppDesignStyle.glass => ru ? 'Стекло' : 'Crystal glass',
+  AppDesignStyle.neon => ru ? 'Контраст' : 'High contrast',
+  AppDesignStyle.minimal => ru ? 'Минимализм' : 'Minimal',
   AppDesignStyle.neomorphic => ru ? 'Мягкий рельеф' : 'Soft relief',
   AppDesignStyle.editorial => ru ? 'Журнальный' : 'Editorial',
-  AppDesignStyle.aurora => ru ? 'Северное сияние' : 'Aurora',
+  AppDesignStyle.aurora => ru ? 'Аврора' : 'Aurora',
 };

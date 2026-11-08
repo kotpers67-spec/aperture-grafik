@@ -136,18 +136,16 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
 
     final now = DateTime.now();
     final restoredShifts = _data.shifts.map((shift) {
-      final revenue =
-          (shift.revenueMinor *
-                  (shift.customRevenuePercent ?? _data.payment.revenuePercent) /
-                  100)
-              .round();
-      // A custom rate/revenue share belongs to the shift and must survive
-      // disabling adaptive salary. Manual earnings are never reconciled.
       if (shift.manualEarningsMinor != null) return shift;
-      final dailyRate =
-          shift.customDailyRateMinor ?? _data.payment.dailyRateMinor;
       return shift.copyWith(
-        earningsMinor: dailyRate + revenue,
+        earningsMinor: _finance.earnings(
+          revenueMinor: _data.payment.trackRevenue ? shift.revenueMinor : 0,
+          payment: _data.payment,
+          customRevenuePercent: shift.customRevenuePercent,
+          customDailyRateMinor: shift.customDailyRateMinor,
+          customHourlyRateMinor: shift.customHourlyRateMinor,
+          workedHours: shift.durationHours,
+        ),
         updatedAt: now,
         clearAdaptiveEarningsOriginal: true,
       );
@@ -209,6 +207,7 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
     required String comment,
     double? customRevenuePercent,
     int? customDailyRateMinor,
+    int? customHourlyRateMinor,
     int? manualEarningsMinor,
   }) async {
     final now = DateTime.now();
@@ -229,12 +228,14 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
         payment: _data.payment,
         customRevenuePercent: customRevenuePercent,
         customDailyRateMinor: customDailyRateMinor,
+        customHourlyRateMinor: customHourlyRateMinor,
         manualEarningsMinor: manualEarningsMinor,
         workedHours: workedHours,
       ),
       comment: comment.trim(),
       customRevenuePercent: customRevenuePercent,
       customDailyRateMinor: customDailyRateMinor,
+      customHourlyRateMinor: customHourlyRateMinor,
       manualEarningsMinor: manualEarningsMinor,
       createdAt: id == null
           ? now
@@ -356,13 +357,17 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
     final excluded = periodShifts
         .where(
           (s) =>
-              s.manualEarningsMinor != null || s.customDailyRateMinor != null,
+              s.manualEarningsMinor != null ||
+              s.customDailyRateMinor != null ||
+              s.customHourlyRateMinor != null,
         )
         .toList();
     final included = periodShifts
         .where(
           (s) =>
-              s.manualEarningsMinor == null && s.customDailyRateMinor == null,
+              s.manualEarningsMinor == null &&
+              s.customDailyRateMinor == null &&
+              s.customHourlyRateMinor == null,
         )
         .toList();
 
