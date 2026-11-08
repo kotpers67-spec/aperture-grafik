@@ -123,6 +123,136 @@ void main() {
     },
   );
 
+  test('universal mode disables revenue calculation when trackRevenue is false', () {
+    const service = FinanceService();
+    const payment = PaymentSettings(
+      dailyRateMinor: 250000,
+      revenuePercent: 10,
+      advanceDay: 15,
+      salaryDay: 30,
+      trackRevenue: false,
+    );
+    expect(
+      service.earnings(revenueMinor: 10000000, payment: payment),
+      250000,
+    );
+  });
+
+  test('hourly mode calculates earnings strictly by worked hours', () {
+    const service = FinanceService();
+    const payment = PaymentSettings(
+      dailyRateMinor: 0,
+      revenuePercent: 0,
+      advanceDay: 15,
+      salaryDay: 30,
+      advanceMode: AdvanceCalculationMode.hourly,
+      hourlyRateMinor: 30000, // 300 RUB/h
+      trackRevenue: false,
+    );
+    expect(
+      service.earnings(
+        revenueMinor: 0,
+        payment: payment,
+        workedHours: 8.5,
+      ),
+      255000, // 8.5 * 30000 = 255000
+    );
+  });
+
+  test('shiftsWorked mode pays 100 percent of shifts worked up to advance day', () {
+    const service = FinanceService();
+    const payment = PaymentSettings(
+      dailyRateMinor: 200000, // 2000 RUB
+      revenuePercent: 0,
+      advanceDay: 15,
+      salaryDay: 30,
+      advanceMode: AdvanceCalculationMode.shiftsWorked,
+      trackRevenue: false,
+    );
+    final shifts = [
+      Shift(
+        id: 's1',
+        date: DateTime(2026, 10, 5),
+        kind: ShiftKind.scheduled,
+        actualStart: DateTime(2026, 10, 5, 9),
+        actualEnd: DateTime(2026, 10, 5, 17),
+        colleagueIds: const [],
+        revenueMinor: 0,
+        earningsMinor: 200000,
+        comment: '',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+      Shift(
+        id: 's2',
+        date: DateTime(2026, 10, 10),
+        kind: ShiftKind.scheduled,
+        actualStart: DateTime(2026, 10, 10, 9),
+        actualEnd: DateTime(2026, 10, 10, 17),
+        colleagueIds: const [],
+        revenueMinor: 0,
+        earningsMinor: 200000,
+        comment: '',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+    ];
+    final state = AppState.initial().copyWith(
+      payment: payment,
+      shifts: shifts,
+    );
+    final status = service.calculatePayoutStatus(
+      state: state,
+      now: DateTime(2026, 10, 12),
+    );
+    expect(status.nextKind, PayoutKind.advance);
+    expect(status.estimatedNextPayoutMinor, 400000); // 2 shifts * 200000
+  });
+
+  test('fixedAmount mode pays exact configured advance amount', () {
+    const service = FinanceService();
+    const payment = PaymentSettings(
+      dailyRateMinor: 200000,
+      revenuePercent: 0,
+      advanceDay: 15,
+      salaryDay: 30,
+      advanceMode: AdvanceCalculationMode.fixedAmount,
+      fixedAdvanceMinor: 1500000, // 15 000 RUB
+    );
+    final state = AppState.initial().copyWith(payment: payment);
+    final status = service.calculatePayoutStatus(
+      state: state,
+      now: DateTime(2026, 10, 5),
+    );
+    expect(status.nextKind, PayoutKind.advance);
+    expect(status.estimatedNextPayoutMinor, 1500000);
+  });
+
+  test('PaymentSettings serialization roundtrips all calculation modes', () {
+    const original = PaymentSettings(
+      dailyRateMinor: 250000,
+      revenuePercent: 7.5,
+      advanceDay: 20,
+      salaryDay: 5,
+      advancePercent: 45,
+      trackRevenue: false,
+      advanceMode: AdvanceCalculationMode.fixedAmount,
+      fixedAdvanceMinor: 1800000,
+      hourlyRateMinor: 35000,
+    );
+    final json = original.toJson();
+    final restored = PaymentSettings.fromJson(json);
+    expect(restored.dailyRateMinor, 250000);
+    expect(restored.revenuePercent, 7.5);
+    expect(restored.advanceDay, 20);
+    expect(restored.salaryDay, 5);
+    expect(restored.advancePercent, 45);
+    expect(restored.trackRevenue, isFalse);
+    expect(restored.advanceMode, AdvanceCalculationMode.fixedAmount);
+    expect(restored.fixedAdvanceMinor, 1800000);
+    expect(restored.hourlyRateMinor, 35000);
+  });
+
   test(
     'Russian and English date symbols are available before rendering',
     () async {

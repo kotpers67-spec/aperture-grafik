@@ -73,4 +73,21 @@ class Strings {
     final rounded = h.toStringAsFixed(1);
     return isRu ? '$rounded ч' : '${rounded}h';
   }
+
+  String get trackRevenueLabel =>
+      isRu ? 'Учитывать выручку и %' : 'Track revenue & %';
+  String get trackRevenueSubtitle => isRu
+      ? 'Включает ввод выручки со смен и процент от кассы'
+      : 'Enables shift revenue and percent bonus';
+  String get advanceModeLabel =>
+      isRu ? 'Режим расчета аванса' : 'Advance formula mode';
+  String get modePercent => isRu ? 'Процент от месяца' : 'Month percentage';
+  String get modeShiftsWorked =>
+      isRu ? 'По сменам (до дня аванса)' : 'By shifts worked (1-15th)';
+  String get modeFixedAmount =>
+      isRu ? 'Фиксированная сумма' : 'Fixed amount';
+  String get modeHourly => isRu ? 'Почасовая ставка' : 'Hourly rate';
+  String get fixedAdvanceLabel =>
+      isRu ? 'Фиксированный аванс' : 'Fixed advance';
+  String get hourlyRateLabel => isRu ? 'Ставка в час' : 'Hourly rate';
 }

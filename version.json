@@ -1,6 +1,6 @@
 {
-  "version": "v0.3.11",
-  "versionCode": 17,
-  "changelog": "• Официальная 3D иконка\n• Стабильная работа и обновления",
-  "apkDownloadUrl": "https://github.com/kotpers67-spec/aperture-grafik/releases/download/v0.3.11/aperture-grafik.apk"
+  "version": "v0.3.12",
+  "versionCode": 18,
+  "changelog": "• Настройка формул расчета аванса и зарплаты (процент, по сменам, фиксированный, почасовой)\n• Возможность отключения выручки и процента для любых профессий\n• Стабильная работа и автообновления",
+  "apkDownloadUrl": "https://github.com/kotpers67-spec/aperture-grafik/releases/download/v0.3.12/aperture-grafik.apk"
 }

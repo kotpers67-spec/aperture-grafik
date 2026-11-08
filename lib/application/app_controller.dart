@@ -212,20 +212,25 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
     int? manualEarningsMinor,
   }) async {
     final now = DateTime.now();
+    final shiftEnd = end.isBefore(start) ? end.add(const Duration(days: 1)) : end;
+    final durationMinutes = shiftEnd.difference(start).inMinutes;
+    final workedHours = durationMinutes < 0 ? 0.0 : durationMinutes / 60.0;
+    final cleanRevenueMinor = _data.payment.trackRevenue ? revenueMinor : 0;
     final shift = Shift(
       id: id ?? _uuid.v4(),
       date: DateTime(date.year, date.month, date.day),
       kind: kind,
       actualStart: start,
-      actualEnd: end.isBefore(start) ? end.add(const Duration(days: 1)) : end,
+      actualEnd: shiftEnd,
       colleagueIds: colleagueIds,
-      revenueMinor: revenueMinor,
+      revenueMinor: cleanRevenueMinor,
       earningsMinor: _finance.earnings(
-        revenueMinor: revenueMinor,
+        revenueMinor: cleanRevenueMinor,
         payment: _data.payment,
         customRevenuePercent: customRevenuePercent,
         customDailyRateMinor: customDailyRateMinor,
         manualEarningsMinor: manualEarningsMinor,
+        workedHours: workedHours,
       ),
       comment: comment.trim(),
       customRevenuePercent: customRevenuePercent,
@@ -376,10 +381,13 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
     // Implied total period earnings based on payout type
     final int impliedTotalMinor;
     if (payout.kind == PayoutKind.advance) {
-      // The entered advance amount represents the configured share of the
-      // month's total earnings.
-      final share = _data.payment.advancePercent / 100;
-      impliedTotalMinor = share <= 0 ? 0 : (actualAmountMinor / share).round();
+      if (_data.payment.advanceMode == AdvanceCalculationMode.percent) {
+        final share = _data.payment.advancePercent / 100;
+        impliedTotalMinor =
+            share <= 0 ? 0 : (actualAmountMinor / share).round();
+      } else {
+        impliedTotalMinor = actualAmountMinor;
+      }
     } else {
       // Salary = total − advances → total = salary + advances in period
       final advancesInPeriod = _data.payouts
@@ -397,7 +405,7 @@ class AppController extends StateNotifier<AsyncValue<AppState>> {
     final reconciledPeriodRate = (adjustedTotal / included.length).round();
     final now = DateTime.now();
     final updatedIncluded = included.map((s) {
-      final rev = (s.revenueMinor * revenuePercent / 100).round();
+      final rev = _data.payment.trackRevenue ? (s.revenueMinor * revenuePercent / 100).round() : 0;
       // The entered payout is the source of truth for the reconciled rate;
       // do not cap it at the ordinary configured daily rate.
       final reconciledRate = reconciledPeriodRate;

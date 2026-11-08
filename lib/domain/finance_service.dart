@@ -37,13 +37,26 @@ class FinanceService {
     double? customRevenuePercent,
     int? customDailyRateMinor,
     int? manualEarningsMinor,
+    double? workedHours,
   }) {
     if (manualEarningsMinor != null) {
       return manualEarningsMinor;
     }
-    final rate = customDailyRateMinor ?? payment.dailyRateMinor;
+    final int baseRate;
+    if (payment.advanceMode == AdvanceCalculationMode.hourly &&
+        (workedHours != null || payment.hourlyRateMinor > 0)) {
+      final hours = workedHours ?? 0.0;
+      baseRate = (hours * payment.hourlyRateMinor).round();
+    } else {
+      baseRate = customDailyRateMinor ?? payment.dailyRateMinor;
+    }
+
+    if (!payment.trackRevenue) {
+      return baseRate;
+    }
+
     final percent = customRevenuePercent ?? payment.revenuePercent;
-    return rate + (revenueMinor * percent / 100).round();
+    return baseRate + (revenueMinor * percent / 100).round();
   }
 
   DateTime _resolveDate(int year, int month, int targetDay) {
@@ -200,13 +213,42 @@ class FinanceService {
     double estimatedNextPayoutHours;
 
     if (nextKind == PayoutKind.advance) {
-      final monthEarnings = advanceMonthShifts.fold<int>(
-        0,
-        (sum, shift) => sum + shift.earningsMinor,
-      );
-      final advanceShare = payment.advancePercent / 100;
-      estimatedNextPayoutMinor = (monthEarnings * advanceShare).round();
-      estimatedNextPayoutHours = _totalHours(advanceMonthShifts) * advanceShare;
+      switch (payment.advanceMode) {
+        case AdvanceCalculationMode.percent:
+          final monthEarnings = advanceMonthShifts.fold<int>(
+            0,
+            (sum, shift) => sum + shift.earningsMinor,
+          );
+          final advanceShare = payment.advancePercent / 100;
+          estimatedNextPayoutMinor = (monthEarnings * advanceShare).round();
+          estimatedNextPayoutHours =
+              _totalHours(advanceMonthShifts) * advanceShare;
+          break;
+
+        case AdvanceCalculationMode.shiftsWorked:
+        case AdvanceCalculationMode.hourly:
+          final shiftsInPeriod = advanceMonthShifts.where((s) {
+            return s.date.day <= payment.advanceDay;
+          }).toList();
+          estimatedNextPayoutMinor = shiftsInPeriod.fold<int>(
+            0,
+            (sum, shift) => sum + shift.earningsMinor,
+          );
+          estimatedNextPayoutHours = _totalHours(shiftsInPeriod);
+          break;
+
+        case AdvanceCalculationMode.fixedAmount:
+          estimatedNextPayoutMinor = payment.fixedAdvanceMinor;
+          final totalEarnings = advanceMonthShifts.fold<int>(
+            0,
+            (sum, shift) => sum + shift.earningsMinor,
+          );
+          final ratio = totalEarnings > 0
+              ? (payment.fixedAdvanceMinor / totalEarnings).clamp(0.0, 1.0)
+              : 0.5;
+          estimatedNextPayoutHours = _totalHours(advanceMonthShifts) * ratio;
+          break;
+      }
     } else {
       if (isLateMonthAdvance) {
         estimatedNextPayoutMinor =

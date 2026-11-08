@@ -33,6 +33,8 @@ enum ShiftKind { scheduled, extra }
 
 enum PayoutKind { advance, salary }
 
+enum AdvanceCalculationMode { percent, shiftsWorked, fixedAmount, hourly }
+
 extension SafeEnumByName<T extends Enum> on Iterable<T> {
   T byNameOr(String? name, T fallback) {
     if (name == null) return fallback;
@@ -218,6 +220,10 @@ class PaymentSettings {
     required this.advanceDay,
     required this.salaryDay,
     this.advancePercent = 30,
+    this.trackRevenue = true,
+    this.advanceMode = AdvanceCalculationMode.percent,
+    this.fixedAdvanceMinor = 0,
+    this.hourlyRateMinor = 0,
   });
 
   final int dailyRateMinor;
@@ -225,6 +231,11 @@ class PaymentSettings {
   final int advanceDay;
   final int salaryDay;
   final int advancePercent;
+  final bool trackRevenue;
+  final AdvanceCalculationMode advanceMode;
+  final int fixedAdvanceMinor;
+  final int hourlyRateMinor;
+
   int get salaryPercent => 100 - advancePercent;
 
   PaymentSettings copyWith({
@@ -233,12 +244,20 @@ class PaymentSettings {
     int? advanceDay,
     int? salaryDay,
     int? advancePercent,
+    bool? trackRevenue,
+    AdvanceCalculationMode? advanceMode,
+    int? fixedAdvanceMinor,
+    int? hourlyRateMinor,
   }) => PaymentSettings(
     dailyRateMinor: dailyRateMinor ?? this.dailyRateMinor,
     revenuePercent: revenuePercent ?? this.revenuePercent,
     advanceDay: advanceDay ?? this.advanceDay,
     salaryDay: salaryDay ?? this.salaryDay,
     advancePercent: advancePercent ?? this.advancePercent,
+    trackRevenue: trackRevenue ?? this.trackRevenue,
+    advanceMode: advanceMode ?? this.advanceMode,
+    fixedAdvanceMinor: fixedAdvanceMinor ?? this.fixedAdvanceMinor,
+    hourlyRateMinor: hourlyRateMinor ?? this.hourlyRateMinor,
   );
 
   Map<String, dynamic> toJson() => {
@@ -247,6 +266,10 @@ class PaymentSettings {
     'advanceDay': advanceDay,
     'salaryDay': salaryDay,
     'advancePercent': advancePercent,
+    'trackRevenue': trackRevenue,
+    'advanceMode': advanceMode.name,
+    'fixedAdvanceMinor': fixedAdvanceMinor,
+    'hourlyRateMinor': hourlyRateMinor,
   };
 
   factory PaymentSettings.fromJson(Map<String, dynamic> json) =>
@@ -259,6 +282,13 @@ class PaymentSettings {
           0,
           100,
         ),
+        trackRevenue: json['trackRevenue'] as bool? ?? true,
+        advanceMode: AdvanceCalculationMode.values.byNameOr(
+          json['advanceMode'] as String?,
+          AdvanceCalculationMode.percent,
+        ),
+        fixedAdvanceMinor: (json['fixedAdvanceMinor'] as num?)?.toInt() ?? 0,
+        hourlyRateMinor: (json['hourlyRateMinor'] as num?)?.toInt() ?? 0,
       );
 }
 
@@ -339,6 +369,11 @@ class Shift {
 
   /// Original earnings captured before an adaptive payout recalculation.
   final int? adaptiveEarningsOriginalMinor;
+
+  double get durationHours {
+    final minutes = actualEnd.difference(actualStart).inMinutes;
+    return minutes < 0 ? 0.0 : minutes / 60.0;
+  }
 
   Shift copyWith({
     DateTime? date,

@@ -1048,16 +1048,17 @@ class _StatisticsPageState extends ConsumerState<StatisticsPage> {
                 spacing: 12,
                 runSpacing: 12,
                 children: [
-                  SizedBox(
-                    width: cardWidth,
-                    child: _MetricCard(
-                      label: strings.revenue,
-                      value: money(data, revenue),
-                      icon: Icons.point_of_sale_rounded,
+                  if (data.payment.trackRevenue)
+                    SizedBox(
+                      width: cardWidth,
+                      child: _MetricCard(
+                        label: strings.revenue,
+                        value: money(data, revenue),
+                        icon: Icons.point_of_sale_rounded,
+                      ),
                     ),
-                  ),
                   SizedBox(
-                    width: cardWidth,
+                    width: data.payment.trackRevenue ? cardWidth : constraints.maxWidth,
                     child: _MetricCard(
                       label: strings.earnings,
                       value: money(data, earnings),
@@ -2571,14 +2572,18 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
         : ((num.tryParse(customDailyRate.text.replaceAll(',', '.')) ?? 0) * 100)
               .round();
 
+    final workedMinutes = end.difference(start).inMinutes;
+    final workedHours = workedMinutes < 0 ? 0.0 : workedMinutes / 60.0;
     final liveEarningsMinor = const FinanceService().earnings(
-      revenueMinor: parsedRevenue,
+      revenueMinor: widget.data.payment.trackRevenue ? parsedRevenue : 0,
       payment: widget.data.payment,
       customRevenuePercent: parsedCustomPercent,
       customDailyRateMinor: parsedCustomRate,
+      workedHours: workedHours,
     );
 
     final showRevenueWarning =
+        widget.data.payment.trackRevenue &&
         parsedCustomPercent != null &&
         parsedCustomPercent > 0 &&
         parsedRevenue <= 0;
@@ -2646,16 +2651,18 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
               controlAffinity: ListTileControlAffinity.trailing,
             ),
           ),
-          TextField(
-            controller: revenue,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(
-              labelText: strings.revenue,
-              prefixIcon: const Icon(Icons.point_of_sale_rounded),
-              suffixText: '₽',
+          if (widget.data.payment.trackRevenue) ...[
+            TextField(
+              controller: revenue,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: strings.revenue,
+                prefixIcon: const Icon(Icons.point_of_sale_rounded),
+                suffixText: '₽',
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
+            const SizedBox(height: 12),
+          ],
           TextField(
             controller: comment,
             maxLines: 3,
@@ -2679,18 +2686,20 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
                 style: Theme.of(context).textTheme.titleSmall,
               ),
               children: [
-                TextField(
-                  controller: customPercent,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
+                if (widget.data.payment.trackRevenue) ...[
+                  TextField(
+                    controller: customPercent,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: strings.customPercentLabel,
+                      prefixIcon: const Icon(Icons.percent_rounded),
+                      suffixText: '%',
+                    ),
                   ),
-                  decoration: InputDecoration(
-                    labelText: strings.customPercentLabel,
-                    prefixIcon: const Icon(Icons.percent_rounded),
-                    suffixText: '%',
-                  ),
-                ),
-                const SizedBox(height: 12),
+                  const SizedBox(height: 12),
+                ],
                 TextField(
                   controller: customDailyRate,
                   keyboardType: const TextInputType.numberWithOptions(
@@ -2818,9 +2827,9 @@ class _ShiftEditorState extends ConsumerState<_ShiftEditor> {
                     start: start,
                     end: end,
                     colleagueIds: people.toList(),
-                    revenueMinor: amount,
+                    revenueMinor: widget.data.payment.trackRevenue ? amount : 0,
                     comment: comment.text,
-                    customRevenuePercent: percent,
+                    customRevenuePercent: widget.data.payment.trackRevenue ? percent : null,
                     customDailyRateMinor: rate,
                   );
               if (context.mounted) Navigator.pop(context);
@@ -3176,9 +3185,9 @@ class _InlineShiftCompletionFormState
           start: _start,
           end: _end,
           colleagueIds: _colleagueIds.toList(),
-          revenueMinor: revenueMinor,
+          revenueMinor: widget.data.payment.trackRevenue ? revenueMinor : 0,
           comment: _comment.text,
-          customRevenuePercent: percent,
+          customRevenuePercent: widget.data.payment.trackRevenue ? percent : null,
           customDailyRateMinor: rate,
         );
   }
@@ -3198,14 +3207,18 @@ class _InlineShiftCompletionFormState
                   100)
               .round();
 
+    final cardMins = _end.difference(_start).inMinutes;
+    final cardHours = cardMins < 0 ? 0.0 : cardMins / 60.0;
     final liveEarningsMinor = const FinanceService().earnings(
-      revenueMinor: parsedRevenue,
+      revenueMinor: widget.data.payment.trackRevenue ? parsedRevenue : 0,
       payment: widget.data.payment,
       customRevenuePercent: parsedCustomPercent,
       customDailyRateMinor: parsedCustomRate,
+      workedHours: cardHours,
     );
 
     final showRevenueWarning =
+        widget.data.payment.trackRevenue &&
         parsedCustomPercent != null &&
         parsedCustomPercent > 0 &&
         parsedRevenue <= 0;
@@ -3297,18 +3310,20 @@ class _InlineShiftCompletionFormState
                 }).toList(),
               ),
             const SizedBox(height: 20),
-            TextField(
-              controller: _revenue,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
+            if (widget.data.payment.trackRevenue) ...[
+              TextField(
+                controller: _revenue,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: InputDecoration(
+                  labelText: strings.revenue,
+                  prefixIcon: const Icon(Icons.point_of_sale_rounded),
+                  suffixText: '₽',
+                ),
               ),
-              decoration: InputDecoration(
-                labelText: strings.revenue,
-                prefixIcon: const Icon(Icons.point_of_sale_rounded),
-                suffixText: '₽',
-              ),
-            ),
-            const SizedBox(height: 12),
+              const SizedBox(height: 12),
+            ],
             TextField(
               controller: _comment,
               maxLines: 2,
@@ -3334,18 +3349,20 @@ class _InlineShiftCompletionFormState
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 children: [
-                  TextField(
-                    controller: _customPercent,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
+                  if (widget.data.payment.trackRevenue) ...[
+                    TextField(
+                      controller: _customPercent,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: strings.customPercentLabel,
+                        prefixIcon: const Icon(Icons.percent_rounded),
+                        suffixText: '%',
+                      ),
                     ),
-                    decoration: InputDecoration(
-                      labelText: strings.customPercentLabel,
-                      prefixIcon: const Icon(Icons.percent_rounded),
-                      suffixText: '%',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
+                    const SizedBox(height: 12),
+                  ],
                   TextField(
                     controller: _customDailyRate,
                     keyboardType: const TextInputType.numberWithOptions(
@@ -3613,11 +3630,13 @@ class _SummaryCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 20),
-            _SummaryLine(
-              label: strings.revenue,
-              value: money(data, shift.revenueMinor),
-            ),
-            const Divider(height: 22),
+            if (data.payment.trackRevenue) ...[
+              _SummaryLine(
+                label: strings.revenue,
+                value: money(data, shift.revenueMinor),
+              ),
+              const Divider(height: 22),
+            ],
             _SummaryLine(
               label: strings.earnings,
               value: money(data, shift.earningsMinor),
@@ -3694,7 +3713,9 @@ class _HistoryRow extends StatelessWidget {
         ).format(shift.date),
       ),
       subtitle: Text(
-        '${Strings(data.settings.language).revenue}: ${money(data, shift.revenueMinor)}',
+        data.payment.trackRevenue
+            ? '${Strings(data.settings.language).revenue}: ${money(data, shift.revenueMinor)}'
+            : Strings(data.settings.language).hoursLabel(shift.durationHours),
       ),
       trailing: Text(
         money(data, shift.earningsMinor),
@@ -4427,123 +4448,253 @@ Future<void> _editPayment(
   final rate = TextEditingController(
     text: (data.payment.dailyRateMinor / 100).toStringAsFixed(2),
   );
+  final hourlyRate = TextEditingController(
+    text: (data.payment.hourlyRateMinor / 100).toStringAsFixed(2),
+  );
   final percent = TextEditingController(text: '${data.payment.revenuePercent}');
   final advanceDay = TextEditingController(text: '${data.payment.advanceDay}');
   final salaryDay = TextEditingController(text: '${data.payment.salaryDay}');
   final advancePercent = TextEditingController(
     text: '${data.payment.advancePercent}',
   );
+  final fixedAdvance = TextEditingController(
+    text: (data.payment.fixedAdvanceMinor / 100).toStringAsFixed(2),
+  );
+  bool trackRevenue = data.payment.trackRevenue;
+  AdvanceCalculationMode advanceMode = data.payment.advanceMode;
+
   final result = await showDialog<PaymentSettings>(
     context: context,
-    builder: (context) => AlertDialog(
-      title: Text(strings.isRu ? 'Ставка и выплаты' : 'Rate and payouts'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: rate,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setDialogState) => AlertDialog(
+        title: Text(strings.isRu ? 'Ставка и выплаты' : 'Rate and payouts'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  strings.trackRevenueLabel,
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                ),
+                subtitle: Text(
+                  strings.trackRevenueSubtitle,
+                  style: const TextStyle(fontSize: 12),
+                ),
+                value: trackRevenue,
+                onChanged: (val) {
+                  setDialogState(() => trackRevenue = val);
+                },
               ),
-              decoration: InputDecoration(
-                labelText: strings.isRu ? 'Дневная ставка' : 'Daily rate',
-                suffixText: '₽',
+              const Divider(height: 20),
+              Text(
+                strings.advanceModeLabel,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: percent,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
+              const SizedBox(height: 8),
+              DropdownButtonFormField<AdvanceCalculationMode>(
+                initialValue: advanceMode,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                items: [
+                  DropdownMenuItem(
+                    value: AdvanceCalculationMode.percent,
+                    child: Text(strings.modePercent),
+                  ),
+                  DropdownMenuItem(
+                    value: AdvanceCalculationMode.shiftsWorked,
+                    child: Text(strings.modeShiftsWorked),
+                  ),
+                  DropdownMenuItem(
+                    value: AdvanceCalculationMode.fixedAmount,
+                    child: Text(strings.modeFixedAmount),
+                  ),
+                  DropdownMenuItem(
+                    value: AdvanceCalculationMode.hourly,
+                    child: Text(strings.modeHourly),
+                  ),
+                ],
+                onChanged: (mode) {
+                  if (mode != null) {
+                    setDialogState(() => advanceMode = mode);
+                  }
+                },
               ),
-              decoration: InputDecoration(
-                labelText: strings.isRu
-                    ? 'Процент от выручки'
-                    : 'Revenue percent',
-                suffixText: '%',
+              const SizedBox(height: 14),
+              if (advanceMode == AdvanceCalculationMode.hourly) ...[
+                TextField(
+                  controller: hourlyRate,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: strings.hourlyRateLabel,
+                    suffixText: '₽/ч',
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ] else ...[
+                TextField(
+                  controller: rate,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: strings.isRu ? 'Дневная ставка' : 'Daily rate',
+                    suffixText: '₽',
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (trackRevenue) ...[
+                TextField(
+                  controller: percent,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: strings.isRu
+                        ? 'Процент от выручки'
+                        : 'Revenue percent',
+                    suffixText: '%',
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (advanceMode == AdvanceCalculationMode.percent) ...[
+                TextField(
+                  controller: advancePercent,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: strings.isRu
+                        ? 'Аванс от заработка'
+                        : 'Advance share',
+                    suffixText: '%',
+                    helperText: strings.isRu
+                        ? 'Зарплата автоматически: ${100 - (int.tryParse(advancePercent.text.trim()) ?? data.payment.advancePercent)}%'
+                        : 'Salary remainder: ${100 - (int.tryParse(advancePercent.text.trim()) ?? data.payment.advancePercent)}%',
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ] else if (advanceMode == AdvanceCalculationMode.fixedAmount) ...[
+                TextField(
+                  controller: fixedAdvance,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: strings.fixedAdvanceLabel,
+                    suffixText: '₽',
+                    helperText: strings.isRu
+                        ? 'Точная сумма выплачиваемого аванса'
+                        : 'Exact advance payout amount',
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ] else if (advanceMode == AdvanceCalculationMode.shiftsWorked) ...[
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    strings.isRu
+                        ? 'Аванс рассчитывается по всем сменам с 1 по день аванса (по табелю). Остаток месяца — в зарплату.'
+                        : 'Advance calculates all shifts up to advance day. Remainder pays on salary day.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              TextField(
+                controller: advanceDay,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: strings.advanceDayLabel,
+                  helperText: strings.isRu
+                      ? 'Число месяца (1–31)'
+                      : 'Day of month (1–31)',
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: advanceDay,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: strings.advanceDayLabel,
-                helperText: strings.isRu
-                    ? 'Число месяца (1–31)'
-                    : 'Day of month (1–31)',
+              const SizedBox(height: 12),
+              TextField(
+                controller: salaryDay,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: strings.salaryDayLabel,
+                  helperText: strings.isRu
+                      ? 'Число месяца (1–31)'
+                      : 'Day of month (1–31)',
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: salaryDay,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: strings.salaryDayLabel,
-                helperText: strings.isRu
-                    ? 'Число месяца (1–31)'
-                    : 'Day of month (1–31)',
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: advancePercent,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: strings.isRu
-                    ? 'Аванс от заработка'
-                    : 'Advance share',
-                suffixText: '%',
-                helperText: strings.isRu
-                    ? 'Зарплата автоматически: ${100 - data.payment.advancePercent}%'
-                    : 'Salary remainder: ${100 - data.payment.advancePercent}%',
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(strings.cancel),
+          ),
+          FilledButton(
+            onPressed: () {
+              final parsedAdv =
+                  int.tryParse(advanceDay.text.trim()) ?? data.payment.advanceDay;
+              final parsedSal =
+                  int.tryParse(salaryDay.text.trim()) ?? data.payment.salaryDay;
+              Navigator.pop(
+                context,
+                PaymentSettings(
+                  dailyRateMinor:
+                      ((num.tryParse(rate.text.replaceAll(',', '.')) ?? 0) * 100)
+                          .round(),
+                  revenuePercent:
+                      num.tryParse(
+                        percent.text.replaceAll(',', '.'),
+                      )?.toDouble() ??
+                      0,
+                  advanceDay: parsedAdv.clamp(1, 31),
+                  salaryDay: parsedSal.clamp(1, 31),
+                  advancePercent:
+                      (int.tryParse(advancePercent.text.trim()) ??
+                              data.payment.advancePercent)
+                          .clamp(0, 100),
+                  trackRevenue: trackRevenue,
+                  advanceMode: advanceMode,
+                  fixedAdvanceMinor:
+                      ((num.tryParse(fixedAdvance.text.replaceAll(',', '.')) ?? 0) * 100)
+                          .round(),
+                  hourlyRateMinor:
+                      ((num.tryParse(hourlyRate.text.replaceAll(',', '.')) ?? 0) * 100)
+                          .round(),
+                ),
+              );
+            },
+            child: Text(strings.save),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(strings.cancel),
-        ),
-        FilledButton(
-          onPressed: () {
-            final parsedAdv =
-                int.tryParse(advanceDay.text.trim()) ?? data.payment.advanceDay;
-            final parsedSal =
-                int.tryParse(salaryDay.text.trim()) ?? data.payment.salaryDay;
-            Navigator.pop(
-              context,
-              PaymentSettings(
-                dailyRateMinor:
-                    ((num.tryParse(rate.text.replaceAll(',', '.')) ?? 0) * 100)
-                        .round(),
-                revenuePercent:
-                    num.tryParse(
-                      percent.text.replaceAll(',', '.'),
-                    )?.toDouble() ??
-                    0,
-                advanceDay: parsedAdv.clamp(1, 31),
-                salaryDay: parsedSal.clamp(1, 31),
-                advancePercent:
-                    (int.tryParse(advancePercent.text.trim()) ??
-                            data.payment.advancePercent)
-                        .clamp(0, 100),
-              ),
-            );
-          },
-          child: Text(strings.save),
-        ),
-      ],
     ),
   );
   rate.dispose();
+  hourlyRate.dispose();
   percent.dispose();
   advanceDay.dispose();
   salaryDay.dispose();
   advancePercent.dispose();
+  fixedAdvance.dispose();
   if (result != null) {
     await controller.updatePayment(result);
   }
